@@ -59,12 +59,13 @@ export class PdfText {
   static #cmap(s) {
     /** @type {Map<number, string>} */
     const map = new Map();
-    const u = (/** @type {string} */ hex) => String.fromCodePoint(...(hex.match(/.{4}/g) ?? []).map((x) => parseInt(x, 16)));
+    // Ligatures map to several code points, written with spaces: <0066 0069>.
+    const u = (/** @type {string} */ hex) => String.fromCodePoint(...(hex.replace(/\s+/g, '').match(/.{4}/g) ?? []).map((x) => parseInt(x, 16)));
     for (const block of s.matchAll(/beginbfrange([\s\S]*?)endbfrange/g)) {
       for (const r of block[1].matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(\[[^\]]*\]|<[0-9a-fA-F]+>)/g)) {
         const lo = parseInt(r[1], 16);
         const hi = parseInt(r[2], 16);
-        if (r[3].startsWith('[')) [...r[3].matchAll(/<([0-9a-fA-F]+)>/g)].forEach((x, i) => map.set(lo + i, u(x[1])));
+        if (r[3].startsWith('[')) [...r[3].matchAll(/<([0-9a-fA-F\s]+)>/g)].forEach((x, i) => map.set(lo + i, u(x[1])));
         else for (let c = lo, v = parseInt(r[3].slice(1, -1), 16); c <= hi; c++, v++) map.set(c, String.fromCodePoint(v));
       }
     }
