@@ -23,6 +23,7 @@ test('examples: the invoice, certificate and report layouts validate and render 
   assert.equal(res.statusCode, 200, res.body);
   const text = PdfText.pages(res.rawPayload)[0];
   for (const s of ['Fatura F-2026-0042', 'Örnek Yazılım A.Ş.', 'Ayşe Yılmaz', 'Danışmanlık (Ekim)', '12.000,00 ₺', 'Sayfa 1 / 1']) assert.ok(text.includes(s), s);
+  assert.equal(text.includes('**'), false, 'the documented invoice prints no markup asterisks');
 
   const cert = heredoc(md('certificate.md'));
   const certData = inline(md('certificate.md'), /-d '([\s\S]*?)'\n# 201/).data;

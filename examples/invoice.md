@@ -30,7 +30,7 @@ rcurl -X POST $RENDER/v1/templates -d @- <<'JSON'
       { "type": "keyValue", "labelWidth": 0.7, "items": [
         { "label": "Ara toplam", "value": "{{subtotal}}" },
         { "label": "KDV %20", "value": "{{vat}}" },
-        { "label": "Genel toplam", "value": "**{{total}}**" }
+        { "label": "Genel toplam", "value": "{{total}}" }
       ] },
       { "type": "text", "if": "paid", "text": "_Ödendi, teşekkür ederiz._" },
       { "type": "qr", "if": "!paid", "value": "{{payUrl}}", "size": 90, "align": "right" },
@@ -41,7 +41,7 @@ rcurl -X POST $RENDER/v1/templates -d @- <<'JSON'
 JSON
 ```
 
-`keyValue` values do not interpret markup (only `text` blocks do); `**{{total}}**` prints the asterisks. Use a `text` block with `runs` for a bold total.
+Pitfall: `keyValue` values are plain text. Markup such as `**{{total}}**` is not interpreted and would print the asterisks; only `text` blocks read `**bold**`/`_italic_`, so use a `text` block (or explicit `runs`) for a bold total.
 
 ## Render
 
