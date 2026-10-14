@@ -95,3 +95,12 @@ test('API: limits — data size, layout size, concurrency 429', async (t) => {
   assert.deepEqual([res.statusCode, json(res).error.code], [429, 'BUSY']);
   service.active = 0;
 });
+
+test('API: X-Actor names the author only for ACTOR_KEYS keys', async (t) => {
+  const { app } = await buildApp(media.url, { ACTOR_KEYS: 'console' });
+  t.after(() => app.close());
+  let res = await app.inject({ method: 'POST', url: '/v1/templates', headers: { ...bearer(RW_KEY), 'x-actor': 'ayse.k' }, payload: { name: 'a', layout: invoice } });
+  assert.equal(json(res).template.createdBy, 'ayse.k');
+  res = await app.inject({ method: 'POST', url: '/v1/templates', headers: { ...bearer(WRITE_KEY), 'x-actor': 'ayse.k' }, payload: { name: 'b', layout: invoice } });
+  assert.equal(json(res).template.createdBy, 'designer');
+});

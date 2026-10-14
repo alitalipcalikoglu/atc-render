@@ -77,6 +77,7 @@ All configuration is environment variables; [.env.example](.env.example) documen
 |---|---|---|
 | `PORT`, `HOST` | `3015`, `0.0.0.0` | Listen address |
 | `RENDER_API_KEYS` | required | `id:secret[:role]`; role `read` (render), `write` (templates, preview), `readwrite` (default) |
+| `ACTOR_KEYS` | empty | Key ids (the console) that may name the acting person in an `X-Actor` header; records show that name instead of the key id. Ignored for every other key |
 | `MEDIA_URL`, `MEDIA_API_KEY` | empty | atc-media for image blocks by id and `store: true` (both or neither) |
 | `MEDIA_TIMEOUT_MS`, `DOWNLOAD_TTL_SEC` | `10000`, `300` | Per media call; signed URL lifetime for stored renders |
 | `MAX_PAGES`, `MAX_TABLE_ROWS` | `50`, `5000` | Per document, per table |

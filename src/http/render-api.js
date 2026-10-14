@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { AuditClient } from '@atc-web/atc-service-core/audit';
 import { createErrorHandler, registerInfo, registerOpenApi, registerProbes, registerRequestContext, requestOptions } from '@atc-web/atc-service-core/fastify';
 import { RenderError } from '../domain/errors.js';
+import { Actor } from './actor.js';
 import { ApiKeyAuth } from './api-key-auth.js';
 import { Schemas } from './schemas.js';
 import { Views } from './views.js';
@@ -98,6 +99,7 @@ export class RenderApi {
       errorResponseBuilder: (_request, context) => Object.assign(new Error(`rate limit exceeded, retry in ${context.after}`), { statusCode: 429, code: 'RATE_LIMITED' }),
     });
     const s = this.service;
+    const who = new Actor(this.config.actorKeys);
     const read = { preHandler: ApiKeyAuth.require('read') };
     const write = { preHandler: ApiKeyAuth.require('write') };
     const name = (/** @type {FastifyRequest} */ r) => /** @type {{ name: string }} */ (r.params).name;
@@ -106,7 +108,7 @@ export class RenderApi {
     api.get('/templates', read, async () => ({ items: this.templates.all().map(Views.template) }));
 
     api.post('/templates', { config: { audit: AuditClient.route('atc-render.template.create', (_r, b) => ({ type: 'template', id: b.template.name }), (_r, b) => ({ version: b.template.latestVersion })) }, ...write, schema: { body: Schemas.create } }, async (request, reply) => {
-      const t = s.create(/** @type {any} */ (request.body), request.apiKey.id);
+      const t = s.create(/** @type {any} */ (request.body), who.of(request));
       reply.header('location', `/v1/templates/${t.name}`);
       return reply.code(201).send({ template: Views.template(t) });
     });
@@ -124,7 +126,7 @@ export class RenderApi {
     });
 
     api.post('/templates/:name/versions', { config: { audit: AuditClient.route('atc-render.version.create', target, (_r, b) => ({ version: b.version.version })) }, ...write, schema: { params: Schemas.nameParams, body: Schemas.version } }, async (request, reply) => {
-      const v = s.publish(name(request), /** @type {any} */ (request.body), request.apiKey.id);
+      const v = s.publish(name(request), /** @type {any} */ (request.body), who.of(request));
       return reply.code(201).send({ version: Views.version(v) });
     });
 
@@ -137,12 +139,12 @@ export class RenderApi {
       config: { audit: AuditClient.route('atc-render.document.render', (r) => ({ type: 'template', id: /** @type {any} */ (r.body).template }), (r) => ({ version: /** @type {any} */ (r.body).version ?? 'latest', store: /** @type {any} */ (r.body).store === true })) },
       ...read, schema: { body: Schemas.render },
     }, async (request, reply) => {
-      const r = await s.render(/** @type {any} */ (request.body), request.apiKey.id);
+      const r = await s.render(/** @type {any} */ (request.body), who.of(request));
       if (!r.stored) return RenderApi.#pdf(reply, r);
       return reply.code(201).send({ fileId: r.stored.fileId, url: r.stored.url, expiresAt: r.stored.expiresAt, pages: r.pages, bytes: r.pdf.length, version: r.version });
     });
 
-    api.post('/render/preview', { config: { audit: AuditClient.route('atc-render.document.preview', () => ({ type: 'layout', id: 'preview' })) }, ...write, schema: { body: Schemas.preview } }, async (request, reply) => RenderApi.#pdf(reply, await s.preview(/** @type {any} */ (request.body), request.apiKey.id)));
+    api.post('/render/preview', { config: { audit: AuditClient.route('atc-render.document.preview', () => ({ type: 'layout', id: 'preview' })) }, ...write, schema: { body: Schemas.preview } }, async (request, reply) => RenderApi.#pdf(reply, await s.preview(/** @type {any} */ (request.body), who.of(request))));
 
     api.get('/stats', read, async () => s.stats());
   }

@@ -36,6 +36,7 @@
  * @property {string} dbPath
  * @property {string} [dbBackupDir]
  * @property {ApiKey[]} apiKeys
+ * @property {string[]} actorKeys   Key ids whose `X-Actor` header names the acting person.
  * @property {number} rateLimitMax
  * @property {Upstream|null} media   Image blocks by file id and stored renders; null = both off.
  * @property {Limits} limits
