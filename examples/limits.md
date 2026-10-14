@@ -32,3 +32,9 @@
 - `502 MEDIA_ERROR`: media could not store or sign.
 
 Images behind a false `if` are neither fetched nor counted.
+
+## Worker threads and the render deadline
+
+Drawing a PDF is CPU work. With `RENDER_WORKERS` (default 2) it runs in worker threads, so a heavy document occupies one worker and nothing else: `/health`, `/ready` and the other requests keep their latency. The number of workers is also the number of documents drawn at the same moment; `RENDER_CONCURRENCY` (default 4) is how many may be admitted, so up to `RENDER_CONCURRENCY - RENDER_WORKERS` wait for a free worker.
+
+`RENDER_TIMEOUT_MS` is checked between blocks inside the worker, and additionally from outside: a worker still busy one second after the deadline is killed and replaced, so a single enormous block or table cannot hold a thread forever. That render answers `422 RENDER_TIMEOUT`; the next one gets a fresh worker. `render_worker_events_total{event="killed|crashed"}` on `/metrics` counts both. Set `RENDER_WORKERS=0` to draw in the main thread (the old behaviour; useful for debugging).

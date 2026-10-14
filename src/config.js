@@ -74,6 +74,7 @@ export class Config {
         maxTableRows: r.integer('MAX_TABLE_ROWS', 5_000, { min: 1 }),
         renderTimeoutMs: r.integer('RENDER_TIMEOUT_MS', 15_000, { min: 500 }),
         concurrency: r.integer('RENDER_CONCURRENCY', 4, { min: 1, max: 64 }),
+        workers: r.integer('RENDER_WORKERS', 2, { min: 0, max: 32 }),
         mediaTimeoutMs: r.integer('MEDIA_TIMEOUT_MS', 10_000, { min: 500 }),
         downloadTtlSec: r.integer('DOWNLOAD_TTL_SEC', 300, { min: 30, max: 86_400 }),
         logRetentionDays: r.integer('RENDER_LOG_DAYS', 30, { min: 1 }),

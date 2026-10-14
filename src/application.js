@@ -7,6 +7,7 @@ import { RenderService } from './domain/render-service.js';
 import { RenderApi } from './http/render-api.js';
 import { MediaClient } from './net/media-client.js';
 import { ImageLoader } from './pdf/images.js';
+import { RenderPool } from './pdf/render-pool.js';
 import { Renderer } from './pdf/renderer.js';
 import { RenderLog } from './store/render-log.js';
 import { TemplateStore } from './store/template-store.js';
@@ -24,7 +25,9 @@ export class Application {
     this.templates = new TemplateStore(this.db);
     this.log = new RenderLog(this.db);
     this.media = config.media ? new MediaClient({ upstream: config.media, timeoutMs: config.limits.mediaTimeoutMs }) : null;
-    this.renderer = new Renderer({ images: new ImageLoader({ media: this.media, limits: config.limits }), limits: config.limits });
+    // Drawing runs in worker threads (RENDER_WORKERS; 0 = in this thread): a heavy document never stalls the HTTP loop.
+    this.pool = config.limits.workers > 0 ? new RenderPool({ size: config.limits.workers, limits: config.limits }).start() : null;
+    this.renderer = new Renderer({ images: new ImageLoader({ media: this.media, limits: config.limits }), limits: config.limits, pool: this.pool });
     this.service = new RenderService({ db: this.db, templates: this.templates, log: this.log, renderer: this.renderer, media: this.media, limits: config.limits });
     /** @type {import('fastify').FastifyInstance|null} */
     this.app = null;
@@ -49,7 +52,7 @@ export class Application {
 
   async start() {
     const { config } = this;
-    const app = await new RenderApi({ config, audit: this.audit, service: this.service, templates: this.templates, db: this.db, version: this.version }).build();
+    const app = await new RenderApi({ config, audit: this.audit, service: this.service, pool: this.pool, templates: this.templates, db: this.db, version: this.version }).build();
     this.app = app;
     const purge = () => { try { const n = this.service.purge(); if (n) app.log.info({ purged: n }, 'render log retention'); } catch (err) { app.log.error({ err }, 'render log retention failed'); } };
     purge();
@@ -61,6 +64,7 @@ export class Application {
       steps: [
         () => { if (this.timer) clearInterval(this.timer); },
         () => this.app?.close(),
+        () => this.pool?.close(),
         () => this.audit.close(),
         () => this.db.close(),
       ],

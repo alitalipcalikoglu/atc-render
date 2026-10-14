@@ -29,8 +29,10 @@ export class RenderApi {
    * @param {string} deps.version
    * @param {import('../types.js').Logger} [deps.logger]
    * @param {import('@atc-web/atc-service-core/audit').AuditClient} [deps.audit]
+   * @param {import('../pdf/render-pool.js').RenderPool|null} [deps.pool]
    */
-  constructor({ config, audit, service, templates, db, version, logger }) {
+  constructor({ config, audit, service, templates, db, version, logger, pool = null }) {
+    this.pool = pool;
     this.config = config;
     this.audit = audit;
     this.service = service;
@@ -181,6 +183,8 @@ export class RenderApi {
         '# HELP render_in_flight Renders running now (process-local).',
         '# TYPE render_in_flight gauge',
         `render_in_flight ${st.active}`,
+        '# HELP render_workers Worker threads that draw PDFs (0 = drawing in the main thread).', '# TYPE render_workers gauge', `render_workers ${this.pool?.size ?? 0}`,
+        '# HELP render_worker_events_total Worker kills (a render outlived its time) and crashes.', '# TYPE render_worker_events_total counter', `render_worker_events_total{event="killed"} ${this.pool?.stats.killed ?? 0}`, `render_worker_events_total{event="crashed"} ${this.pool?.stats.crashed ?? 0}`,
         '# HELP render_busy_total Requests refused because all render slots were busy (process-local).',
         '# TYPE render_busy_total counter',
         `render_busy_total ${c.busy}`,

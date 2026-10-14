@@ -18,6 +18,7 @@
  * @property {number} maxTableRows        Rows per table block.
  * @property {number} renderTimeoutMs
  * @property {number} concurrency         Renders at the same time; more answer 429.
+ * @property {number} workers             Worker threads that draw PDFs; 0 = draw in the main thread.
  * @property {number} mediaTimeoutMs
  * @property {number} downloadTtlSec
  * @property {number} logRetentionDays

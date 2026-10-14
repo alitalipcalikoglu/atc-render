@@ -27,10 +27,11 @@ export class Renderer {
   static PAD = 4;
 
   /**
-   * @param {{ images: import('./images.js').ImageLoader, limits: import('../types.js').Limits, compress?: boolean, now?: () => number }} deps
+   * @param {{ images: import('./images.js').ImageLoader|null, limits: import('../types.js').Limits, compress?: boolean, now?: () => number, pool?: import('./render-pool.js').RenderPool|null }} deps
    */
-  constructor({ images, limits, compress = true, now = Date.now }) {
-    this.images = images;
+  constructor({ images, limits, compress = true, now = Date.now, pool = null }) {
+    this.images = /** @type {import('./images.js').ImageLoader} */ (images);
+    this.pool = pool;
     this.limits = limits;
     this.compress = compress;
     this.now = now;
@@ -51,10 +52,23 @@ export class Renderer {
    * @returns {Promise<{ pdf: Buffer, pages: number }>}
    */
   async render(layout, data, meta = {}) {
-    const deadline = this.now() + this.limits.renderTimeoutMs;
     const signal = AbortSignal.timeout(this.limits.renderTimeoutMs);
     const blocks = Renderer.visible(layout, data);
+    // Images come over the network, so they are loaded here; the drawing is CPU work and runs in a worker thread when a pool is configured.
     const images = await this.images.load(blocks.filter(({ block }) => block.type === 'image'), signal);
+    if (this.pool) return this.pool.run({ layout, data, meta, images });
+    return this.draw(layout, data, meta, images);
+  }
+
+  /**
+   * The synchronous drawing step: nothing but CPU, so it can run in a worker thread. The deadline is checked
+   * between blocks; with a pool the worker is also killed from outside when the time is up.
+   * @param {Layout} layout @param {unknown} data @param {{ title?: string }} meta @param {Map<string, Buffer>} images
+   * @returns {Promise<{ pdf: Buffer, pages: number }>}
+   */
+  async draw(layout, data, meta, images) {
+    const deadline = this.now() + this.limits.renderTimeoutMs;
+    const blocks = Renderer.visible(layout, data);
     const page = layout.page ?? {};
     const m = { top: 56, right: 56, bottom: 56, left: 56, ...(page.margins ?? {}) };
     const doc = new PDFDocument({

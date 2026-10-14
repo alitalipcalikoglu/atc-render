@@ -85,6 +85,7 @@ All configuration is environment variables; [.env.example](.env.example) documen
 | `MAX_IMAGES`, `MAX_IMAGE_BYTES`, `MAX_TOTAL_IMAGE_BYTES` | `20`, `2097152`, `10485760` | Image caps per document |
 | `MAX_PDF_BYTES` | `20971520` | Output cap |
 | `RENDER_TIMEOUT_MS`, `RENDER_CONCURRENCY` | `15000`, `4` | Per render; parallel renders (more answer 429) |
+| `RENDER_WORKERS` | `2` | Worker threads that draw PDFs (`0` = in the main thread). Drawing never blocks health checks or other requests, and a worker whose render outlives `RENDER_TIMEOUT_MS` (plus a second) is killed and replaced |
 | `MAX_VERSIONS`, `RENDER_LOG_DAYS` | `100`, `30` | Versions kept per template; render log retention |
 | `DB_PATH`, `DB_BACKUP_DIR`, `BODY_LIMIT`, `RATE_LIMIT_MAX` | `./data/render.db`, –, `4194304`, `600` | |
 | `TRUST_PROXY`, `TLS_CERT_PATH`, `TLS_KEY_PATH`, `LOG_LEVEL` | | As in every service |
@@ -133,7 +134,7 @@ With `AUDIT_URL` and `AUDIT_API_KEY` set, every completed write and render is fo
 
 ## Scaling model
 
-**B — single-node stateful.** Templates and the render log are one SQLite file (`instances: 1`); rendering is bounded by `RENDER_CONCURRENCY` per process. See [docs/READINESS.md](docs/READINESS.md).
+**B — single-node stateful.** Templates and the render log are one SQLite file (`instances: 1`); rendering is bounded by `RENDER_CONCURRENCY` per process and drawn in `RENDER_WORKERS` threads. See [docs/READINESS.md](docs/READINESS.md).
 
 ## Observability
 
