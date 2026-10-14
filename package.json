@@ -1,6 +1,6 @@
 {
   "name": "@atc-web/atc-render",
-  "version": "1.17.1",
+  "version": "1.18.0",
   "private": true,
   "description": "PDF rendering from versioned JSON layout templates: headings, text with placeholders, tables across pages, images, QR codes; streamed or stored in media",
   "license": "MIT",
@@ -20,7 +20,7 @@
     "typecheck": "tsc -p jsconfig.json"
   },
   "dependencies": {
-    "@atc-web/atc-service-core": "github:alitalipcalikoglu/atc-service-core#v1.17.1",
+    "@atc-web/atc-service-core": "github:alitalipcalikoglu/atc-service-core#v1.18.0",
     "@fastify/rate-limit": "11.2.0",
     "fastify": "5.12.5",
     "pdfkit": "0.20.2"
