@@ -8,6 +8,7 @@ import { Actor } from './actor.js';
 import { ApiKeyAuth } from './api-key-auth.js';
 import { Schemas } from './schemas.js';
 import { Views } from './views.js';
+import { AuditMetrics } from '../audit-metrics.js';
 
 /** @typedef {import('../config.js').Config} Config */
 /** @typedef {import('fastify').FastifyInstance} FastifyInstance */
@@ -183,6 +184,7 @@ export class RenderApi {
         '# HELP render_busy_total Requests refused because all render slots were busy (process-local).',
         '# TYPE render_busy_total counter',
         `render_busy_total ${c.busy}`,
+        ...AuditMetrics.lines(this.audit),
         '# HELP render_process_uptime_seconds Process uptime.',
         '# TYPE render_process_uptime_seconds gauge',
         `render_process_uptime_seconds ${process.uptime().toFixed(0)}`,

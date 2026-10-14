@@ -139,6 +139,8 @@ With `AUDIT_URL` and `AUDIT_API_KEY` set, every completed write and render is fo
 
 Request logs with request id and trace context; `/metrics` (templates, renders and failures by code in 24 h, average ms, pages, bytes, in-flight, busy refusals); `/v1/stats`; `/ready`. See [docs/READINESS.md](docs/READINESS.md).
 
+Audit forwarding is observable too: `audit_forward_enabled`, `audit_forward_events_total{result="recorded|sent|dropped|failed"}` and `audit_forward_pending`. A rising `dropped`, or a `pending` that does not drain, means audit events are being lost or delayed; alert on it.
+
 ## Backup / restore
 
 The SQLite file at `DB_PATH` holds templates, versions and the render log; stored PDFs are in atc-media. `sqlite3 data/render.db "VACUUM INTO 'backup.db'"` takes an online copy. Restore by stopping the service, replacing the file and starting again. Migrations are not reversible.
