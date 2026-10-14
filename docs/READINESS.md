@@ -79,9 +79,9 @@ attachments with `content-security-policy: default-src 'none'; sandbox`. No Java
 form fields are written into PDFs.
 
 ## Scaling model
-**A — stateless rendering with a small stateful catalog.** Rendering is CPU-bound and per
-process; templates and the render log are in one SQLite file, so one process per file
-(`instances: 1`). Scale out with more hosts, each with its own catalog, or by splitting traffic.
+**B — single-node stateful.** Templates and the render log live in one SQLite file, so one
+process per file (`instances: 1`). Rendering itself is CPU-bound and holds no shared state, so the
+bound is `RENDER_CONCURRENCY` per process.
 
 ## Known failure modes
 - **Many large renders at once**: requests beyond `RENDER_CONCURRENCY` get `429 BUSY`.
