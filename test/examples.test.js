@@ -14,8 +14,10 @@ test('examples: the invoice, certificate and report layouts validate and render 
   const { app } = await buildApp(media.url);
   t.after(() => app.close());
   const h = bearer(RW_KEY);
-  const heredoc = (/** @type {string} */ s) => JSON.parse(/** @type {string} */ (/<<'JSON'\n([\s\S]*?)\nJSON/.exec(s))[1]);
-  const inline = (/** @type {string} */ s, /** @type {RegExp} */ re) => JSON.parse(/** @type {string} */ (re.exec(s))[1]);
+  /** @param {string} s @param {RegExp} re */
+  const match = (s, re) => { const m = re.exec(s); assert.ok(m, `example block not found: ${re}`); return JSON.parse(m[1]); };
+  const heredoc = (/** @type {string} */ s) => match(s, /<<'JSON'\n([\s\S]*?)\nJSON/);
+  const inline = (/** @type {string} */ s, /** @type {RegExp} */ re) => match(s, re);
 
   const invoice = heredoc(md('invoice.md'));
   const invoiceData = inline(md('invoice.md'), /-o F-2026-0042\.pdf -d '([\s\S]*?)'\n```/).data;
