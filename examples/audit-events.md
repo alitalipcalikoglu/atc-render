@@ -17,3 +17,14 @@ One event per completed request (`success`, or `denied` on 403). Validation fail
 | `atc-render.version.create` | `POST /v1/templates/:name/versions` | template | `version` |
 | `atc-render.document.render` | `POST /v1/render` | template | `version` (or `latest`), `store` |
 | `atc-render.document.preview` | `POST /v1/render/preview` | `{ type: "layout", id: "preview" }` | |
+
+
+## Who is the actor
+
+The actor is the calling API key (`{ "type": "apikey", "id": "<key id>" }`). When the key is listed in `ACTOR_KEYS` (the console) and sends a valid `X-Actor` header, the event names that person instead, and the key moves to `meta.via`:
+
+```json
+{ "action": "atc-render.template.create", "actor": { "type": "admin", "id": "ayse.k" }, "meta": { "via": "atc-console" } }
+```
+
+`X-Actor` from any other key is ignored; its events keep the key as actor.

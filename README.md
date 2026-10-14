@@ -129,7 +129,7 @@ test/                         node:test suites, with a PDF text extractor for co
 
 ## Audit events
 
-With `AUDIT_URL` and `AUDIT_API_KEY` set, every completed write and render is forwarded as one event (`success`, or `denied` on 403) with the calling key as actor: `atc-render.template.create|update|delete`, `atc-render.version.create` (meta: version), `atc-render.document.render` (target: template; meta: version, store), `atc-render.document.preview`. Render data never appears in events. Details: [examples/audit-events.md](examples/audit-events.md).
+With `AUDIT_URL` and `AUDIT_API_KEY` set, every completed write and render is forwarded as one event (`success`, or `denied` on 403) with the calling key as actor (or, for an `ACTOR_KEYS` key sending `X-Actor`, that admin as actor and the key in `meta.via`): `atc-render.template.create|update|delete`, `atc-render.version.create` (meta: version), `atc-render.document.render` (target: template; meta: version, store), `atc-render.document.preview`. Render data never appears in events. Details: [examples/audit-events.md](examples/audit-events.md).
 
 ## Scaling model
 

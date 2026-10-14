@@ -53,7 +53,7 @@ export class RenderApi {
     registerRequestContext(app, { trustProxy: config.trustProxy });
     app.decorateRequest('apiKey', /** @type {any} */ (null));
     app.setErrorHandler(createErrorHandler(RenderError));
-    app.addHook('onSend', AuditClient.hook(this.audit));
+    app.addHook('onSend', new Actor(config.actorKeys).auditHook(this.audit));
     app.setNotFoundHandler((_request, reply) => {
       reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'route not found' } });
     });
