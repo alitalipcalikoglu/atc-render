@@ -45,6 +45,8 @@ After changing `src/domain/layout-schema.js`, run `node scripts/openapi-layout.m
 - **Template**: a name (`[a-z][a-z0-9-]{0,63}`), a description and versions 1, 2, 3 … Publishing adds a version; versions never change. Renders use the latest unless a `version` is given. Versions beyond `MAX_VERSIONS` are pruned, oldest first.
 - **Layout**: `page` (A4/Letter/A5, portrait/landscape, margins, base font size), optional `header`/`footer` (`{{page}}`, `{{pages}}`), and `blocks`. Validated against a closed JSON schema (`components.schemas.Layout` in [openapi.yaml](openapi.yaml)); a mismatch is `400 VALIDATION_FAILED` whose `details[].path` names the block.
 - **Data**: any JSON object. `{{path}}` reads own properties by dot path; inside table columns the row is searched first, then the data. Markup is parsed before placeholders are filled, so data never adds formatting.
+- **Jobs**: `POST /v1/renders` queues a render and answers `202` at once. The version is pinned at submit; data is dropped from the job when it finishes. Jobs live in SQLite (a restart re-queues running ones) and the PDF stays in the database until `RENDER_JOB_HOURS` after the job finished, unless `store: true` put it in atc-media. When synchronous renders hold every slot, a job waits instead of failing.
+- **Fonts**: DejaVu by default; `page.font` names a family installed in `FONTS_DIR` (see `GET /v1/fonts`), which replaces the regular, bold, italic and bold-italic faces for the whole document; `mono` runs stay DejaVu Sans Mono. An unknown family is `400 UNKNOWN_FONT` on save and preview.
 - **Render errors** found while drawing are `422` with `details.block` (`blocks[3].rows`).
 
 ## API
@@ -61,6 +63,11 @@ All `/v1/*` routes and `/metrics` need `Authorization: Bearer <secret>`.
 | GET | `/v1/templates/:name/versions/:version` | read | One version with its layout |
 | POST | `/v1/render` | read | `{ template, version?, data, filename?, store? }` → `application/pdf` attachment, or `201 { fileId, url, expiresAt, pages, bytes, version }` with `store: true` |
 | POST | `/v1/render/preview` | write | `{ layout, data }` → PDF of an unsaved layout |
+| POST | `/v1/renders` | read | Same body as `/v1/render` → `202 { job }`: queued, drawn in the background, kept `RENDER_JOB_HOURS` |
+| GET | `/v1/renders?status=&limit=` | read | The calling key's jobs, newest first |
+| GET | `/v1/renders/:id` | read | Job status, `error`, `result` (`{ download }` or, with `store`, `{ fileId, url, expiresAt }`) |
+| GET | `/v1/renders/:id/pdf` | read | The finished PDF; `409 JOB_NOT_READY` until then |
+| GET | `/v1/fonts` | read | `{ default: "dejavu", items }`: families a layout can name in `page.font` |
 | GET | `/v1/stats` | read | Templates; last 24 h renders, failures by code, average ms, pages, bytes, stored, per template |
 
 PDF responses carry `content-disposition: attachment`, `content-security-policy: default-src 'none'; sandbox`, `x-render-pages` and `x-render-ms`. Errors are `{ "error": { "code", "message", "details"? } }`: `VALIDATION_FAILED`, `INVALID_LAYOUT`, `MEDIA_DISABLED` (400); `TEMPLATE_NOT_FOUND`, `VERSION_NOT_FOUND` (404); `TEMPLATE_EXISTS` (409); `DATA_TOO_LARGE`, `LAYOUT_TOO_LARGE` (413); `RENDER_FAILED`, `TOO_MANY_PAGES`, `TOO_MANY_IMAGES`, `IMAGE_TOO_LARGE`, `IMAGE_UNSUPPORTED`, `RENDER_TIMEOUT`, `PDF_TOO_LARGE` (422); `BUSY`, `RATE_LIMITED` (429); `MEDIA_ERROR` (502).
@@ -87,6 +94,8 @@ All configuration is environment variables; [.env.example](.env.example) documen
 | `RENDER_TIMEOUT_MS`, `RENDER_CONCURRENCY` | `15000`, `4` | Per render; parallel renders (more answer 429) |
 | `RENDER_WORKERS` | `2` | Worker threads that draw PDFs (`0` = in the main thread). Drawing never blocks health checks or other requests, and a worker whose render outlives `RENDER_TIMEOUT_MS` (plus a second) is killed and replaced |
 | `MAX_VERSIONS`, `RENDER_LOG_DAYS` | `100`, `30` | Versions kept per template; render log retention |
+| `RENDER_JOB_CONCURRENCY`, `RENDER_QUEUE_MAX`, `RENDER_JOB_HOURS` | `1`, `100`, `24` | Asynchronous jobs drawn at once (each takes one of the `RENDER_CONCURRENCY` slots, so it must not exceed it); queued plus running jobs before `429 QUEUE_FULL`; how long finished jobs and their PDFs are kept |
+| `FONTS_DIR` | empty | Directory of extra TrueType/OpenType families (`<Family>.ttf` or `-Regular`, optional `-Bold`, `-Italic`, `-BoldItalic`); a layout picks one with `page.font`. Every file is opened at startup; a broken one fails startup |
 | `DB_PATH`, `DB_BACKUP_DIR`, `BODY_LIMIT`, `RATE_LIMIT_MAX` | `./data/render.db`, –, `4194304`, `600` | |
 | `TRUST_PROXY`, `TLS_CERT_PATH`, `TLS_KEY_PATH`, `LOG_LEVEL` | | As in every service |
 | `AUDIT_URL`, `AUDIT_API_KEY` | empty | Forward audit events (both or neither) |
@@ -114,7 +123,7 @@ src/
     images.js                 image loading and caps
     qr-code.js                QR encoder (ISO/IEC 18004, no dependencies)
   net/media-client.js         atc-media: signed image bytes, stored renders
-  store/                      TemplateStore, RenderLog
+  store/                      TemplateStore, RenderLog, JobStore
   http/                       RenderApi routes, ApiKeyAuth, Schemas, Views
 fonts/                        DejaVu TTFs and their license
 scripts/openapi-layout.mjs    copies the layout schema into openapi.yaml
@@ -123,18 +132,18 @@ test/                         node:test suites, with a PDF text extractor for co
 
 ## Out of scope by design
 
-- HTML/CSS input, arbitrary fonts per template, right-to-left shaping, CJK.
+- HTML/CSS input, font upload through the API (fonts are installed by the operator in `FONTS_DIR`), right-to-left shaping (Arabic, Hebrew letters render but are not reordered or joined). CJK works with a CJK font in `FONTS_DIR`; line breaking stays the Latin word-break rule.
 - Arithmetic, number or date formatting inside layouts (send formatted values).
 - Fillable forms, digital signatures, encryption, PDF/A.
-- Queued (asynchronous) rendering: requests over `RENDER_CONCURRENCY` are refused with 429.
+- Callbacks when an asynchronous job finishes: poll `GET /v1/renders/:id`. Synchronous requests over `RENDER_CONCURRENCY` are still refused with 429; queued jobs wait for a slot instead.
 
 ## Audit events
 
-With `AUDIT_URL` and `AUDIT_API_KEY` set, every completed write and render is forwarded as one event (`success`, or `denied` on 403) with the calling key as actor (or, for an `ACTOR_KEYS` key sending `X-Actor`, that admin as actor and the key in `meta.via`): `atc-render.template.create|update|delete`, `atc-render.version.create` (meta: version), `atc-render.document.render` (target: template; meta: version, store), `atc-render.document.preview`. Render data never appears in events. Details: [examples/audit-events.md](examples/audit-events.md).
+With `AUDIT_URL` and `AUDIT_API_KEY` set, every completed write and render is forwarded as one event (`success`, or `denied` on 403) with the calling key as actor (or, for an `ACTOR_KEYS` key sending `X-Actor`, that admin as actor and the key in `meta.via`): `atc-render.template.create|update|delete`, `atc-render.version.create` (meta: version), `atc-render.document.render` (target: template; meta: version, store), `atc-render.document.preview`, `atc-render.job.create` (target: job; meta: template, version, store). Render data never appears in events. Details: [examples/audit-events.md](examples/audit-events.md).
 
 ## Scaling model
 
-**B — single-node stateful.** Templates and the render log are one SQLite file (`instances: 1`); rendering is bounded by `RENDER_CONCURRENCY` per process and drawn in `RENDER_WORKERS` threads. See [docs/READINESS.md](docs/READINESS.md).
+**B — single-node stateful.** Templates, the render log and the asynchronous job queue are one SQLite file (`instances: 1`); rendering is bounded by `RENDER_CONCURRENCY` per process and drawn in `RENDER_WORKERS` threads. See [docs/READINESS.md](docs/READINESS.md).
 
 ## Observability
 

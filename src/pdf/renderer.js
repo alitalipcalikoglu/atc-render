@@ -27,9 +27,10 @@ export class Renderer {
   static PAD = 4;
 
   /**
-   * @param {{ images: import('./images.js').ImageLoader|null, limits: import('../types.js').Limits, compress?: boolean, now?: () => number, pool?: import('./render-pool.js').RenderPool|null }} deps
+   * @param {{ images: import('./images.js').ImageLoader|null, limits: import('../types.js').Limits, compress?: boolean, now?: () => number, pool?: import('./render-pool.js').RenderPool|null, fonts?: Record<string, import('./font-catalog.js').FontFaces> }} deps
    */
-  constructor({ images, limits, compress = true, now = Date.now, pool = null }) {
+  constructor({ images, limits, compress = true, now = Date.now, pool = null, fonts = {} }) {
+    this.fonts = fonts;
     this.images = /** @type {import('./images.js').ImageLoader} */ (images);
     this.pool = pool;
     this.limits = limits;
@@ -76,6 +77,12 @@ export class Renderer {
       info: { Title: meta.title ?? 'Document', Producer: 'atc-render', Creator: 'atc-render' },
     });
     for (const [name, file] of Object.entries(Renderer.FONTS)) doc.registerFont(name, `${Renderer.FONTS_DIR}${file}`);
+    if (page.font) {
+      // A FONTS_DIR family replaces the sans faces for the whole document; mono stays DejaVu.
+      const f = Object.hasOwn(this.fonts, page.font) ? this.fonts[page.font] : null;
+      if (!f) throw new RenderError('UNKNOWN_FONT', `font "${page.font}" is not installed (FONTS_DIR)`, { font: page.font });
+      doc.registerFont('sans', f.regular).registerFont('sans-bold', f.bold).registerFont('sans-italic', f.italic).registerFont('sans-bolditalic', f.bolditalic);
+    }
     /** @type {Buffer[]} */
     const chunks = [];
     let size = 0;

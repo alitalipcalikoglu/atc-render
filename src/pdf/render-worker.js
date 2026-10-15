@@ -7,7 +7,7 @@ import { Renderer } from './renderer.js';
  * It never touches the network or the database (images arrive as bytes), so a layout that keeps it busy
  * only ever blocks this thread.
  */
-const renderer = new Renderer({ images: null, limits: workerData.limits, compress: workerData.compress });
+const renderer = new Renderer({ images: null, limits: workerData.limits, compress: workerData.compress, fonts: workerData.fonts });
 const port = /** @type {import('node:worker_threads').MessagePort} */ (parentPort);
 port.on('message', async (/** @type {{ id: number, layout: any, data: unknown, meta: { title?: string }, images: [string, Uint8Array][] }} */ job) => {
   try {

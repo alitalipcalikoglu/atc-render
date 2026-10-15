@@ -4,6 +4,7 @@ import Fastify from 'fastify';
 import { AuditClient } from '@atc-web/atc-service-core/audit';
 import { createErrorHandler, registerInfo, registerOpenApi, registerProbes, registerRequestContext, requestOptions } from '@atc-web/atc-service-core/fastify';
 import { RenderError } from '../domain/errors.js';
+import { RenderService } from '../domain/render-service.js';
 import { Actor } from './actor.js';
 import { ApiKeyAuth } from './api-key-auth.js';
 import { Schemas } from './schemas.js';
@@ -30,8 +31,10 @@ export class RenderApi {
    * @param {import('../types.js').Logger} [deps.logger]
    * @param {import('@atc-web/atc-service-core/audit').AuditClient} [deps.audit]
    * @param {import('../pdf/render-pool.js').RenderPool|null} [deps.pool]
+   * @param {import('../domain/job-runner.js').JobRunner|null} [deps.jobs]  Asynchronous renders; null = routes answer 404.
    */
-  constructor({ config, audit, service, templates, db, version, logger, pool = null }) {
+  constructor({ config, audit, service, templates, db, version, logger, pool = null, jobs = null }) {
+    this.jobs = jobs;
     this.pool = pool;
     this.config = config;
     this.audit = audit;
@@ -69,7 +72,7 @@ export class RenderApi {
     registerInfo(app, {
       service: 'atc-render',
       version: this.version,
-      capabilities: ['pdf', 'versioned-templates', 'unicode-fonts', 'tables', 'qr', 'images-base64', ...(config.media ? ['images-media', 'store-media'] : [])],
+      capabilities: ['pdf', 'versioned-templates', 'unicode-fonts', 'tables', 'qr', 'images-base64', ...(this.jobs ? ['async-jobs'] : []), ...(Object.keys(this.service.renderer.fonts).length ? ['custom-fonts'] : []), ...(config.media ? ['images-media', 'store-media'] : [])],
       schemaVersion: this.db.schemaVersion,
     });
     await app.register((api) => this.#registerV1(api), { prefix: '/v1' });
@@ -149,7 +152,32 @@ export class RenderApi {
 
     api.post('/render/preview', { config: { audit: AuditClient.route('atc-render.document.preview', () => ({ type: 'layout', id: 'preview' })) }, ...write, schema: { body: Schemas.preview } }, async (request, reply) => RenderApi.#pdf(reply, await s.preview(/** @type {any} */ (request.body), who.of(request))));
 
-    api.get('/stats', read, async () => s.stats());
+    api.get('/fonts', read, async () => ({ default: 'dejavu', items: Object.keys(s.renderer.fonts).sort() }));
+
+    const jobs = this.jobs;
+    if (jobs) {
+      const owner = (/** @type {FastifyRequest} */ r) => /** @type {{ id: string }} */ (r.apiKey).id;
+      const jobId = (/** @type {FastifyRequest} */ r) => /** @type {{ id: string }} */ (r.params).id;
+      api.post('/renders', {
+        config: { audit: AuditClient.route('atc-render.job.create', (_r, b) => ({ type: 'job', id: b.job.id }), (_r, b) => ({ template: b?.job?.template, version: b?.job?.version, store: b?.job?.store })) },
+        ...read, schema: { body: Schemas.render },
+      }, async (request, reply) => {
+        const j = jobs.submit(/** @type {any} */ (request.body), owner(request), who.of(request));
+        reply.header('location', `/v1/renders/${j.id}`);
+        return reply.code(202).send({ job: Views.job(j) });
+      });
+      api.get('/renders', { ...read, schema: { querystring: Schemas.jobsQuery } }, async (request) => {
+        const q = /** @type {{ status?: string, limit?: string }} */ (request.query);
+        return { items: jobs.jobs.list(owner(request), { status: q.status, limit: q.limit ? Number(q.limit) : 50 }).map(Views.job) };
+      });
+      api.get('/renders/:id', { ...read, schema: { params: Schemas.jobParams } }, async (request) => ({ job: Views.job(jobs.get(jobId(request), owner(request))) }));
+      api.get('/renders/:id/pdf', { ...read, schema: { params: Schemas.jobParams } }, async (request, reply) => {
+        const r = jobs.pdf(jobId(request), owner(request));
+        return RenderApi.#pdf(reply, { ...r, filename: RenderService.filename(r.filename), ms: 0 });
+      });
+    }
+
+    api.get('/stats', read, async () => ({ ...s.stats(), ...(this.jobs ? { jobs: { ...this.jobs.jobs.counts(), concurrency: this.config.limits.jobConcurrency, queueMax: this.config.limits.queueMax } } : {}) }));
   }
 
   /** @param {FastifyInstance} ops */
@@ -161,6 +189,7 @@ export class RenderApi {
       const label = (/** @type {string} */ v) => v.replace(/[\\"\n]/g, '\\$&');
       reply.type('text/plain; version=0.0.4; charset=utf-8');
       return [
+        ...(this.jobs ? ['# HELP render_jobs Asynchronous render jobs kept, by status.', '# TYPE render_jobs gauge', ...Object.entries({ queued: 0, running: 0, succeeded: 0, failed: 0, ...this.jobs.jobs.counts() }).map(([k, n]) => `render_jobs{status="${k}"} ${n}`)] : []),
         '# HELP render_templates Templates.',
         '# TYPE render_templates gauge',
         `render_templates ${st.templates}`,

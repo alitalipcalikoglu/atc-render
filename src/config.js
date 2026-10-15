@@ -25,6 +25,8 @@ export class Config {
     this.rateLimitMax = v.rateLimitMax;
     this.media = v.media;
     this.limits = Object.freeze({ ...v.limits });
+    if (v.limits.jobConcurrency > v.limits.concurrency) throw new ConfigError('RENDER_JOB_CONCURRENCY must not exceed RENDER_CONCURRENCY');
+    this.fontsDir = v.fontsDir;
     Object.freeze(this);
   }
 
@@ -79,7 +81,11 @@ export class Config {
         downloadTtlSec: r.integer('DOWNLOAD_TTL_SEC', 300, { min: 30, max: 86_400 }),
         logRetentionDays: r.integer('RENDER_LOG_DAYS', 30, { min: 1 }),
         maxVersions: r.integer('MAX_VERSIONS', 100, { min: 1 }),
+        jobConcurrency: r.integer('RENDER_JOB_CONCURRENCY', 1, { min: 1, max: 64 }),
+        queueMax: r.integer('RENDER_QUEUE_MAX', 100, { min: 1, max: 100_000 }),
+        jobRetentionHours: r.integer('RENDER_JOB_HOURS', 24, { min: 1, max: 720 }),
       },
+      fontsDir: r.optional('FONTS_DIR') || null,
     });
   }
 

@@ -40,5 +40,33 @@ export class Database extends CoreDatabase {
     );
     CREATE INDEX renders_at ON renders (at);
     `,
+    `
+    -- Asynchronous renders (POST /v1/renders): queued, drawn in the background, kept until
+    -- RENDER_JOB_HOURS after they finish. The PDF is kept here unless the job stored it in media.
+    CREATE TABLE jobs (
+      id            TEXT PRIMARY KEY,
+      owner         TEXT NOT NULL,
+      actor         TEXT NOT NULL,
+      template      TEXT NOT NULL,
+      version       INTEGER NOT NULL,
+      data          TEXT NOT NULL,
+      filename      TEXT NOT NULL,
+      store         INTEGER NOT NULL DEFAULT 0,
+      status        TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed')),
+      error_code    TEXT,
+      error_message TEXT,
+      pages         INTEGER,
+      bytes         INTEGER,
+      pdf           BLOB,
+      file_id       TEXT,
+      url           TEXT,
+      url_expires_at INTEGER,
+      created_at    INTEGER NOT NULL,
+      started_at    INTEGER,
+      finished_at   INTEGER
+    );
+    CREATE INDEX jobs_status ON jobs (status, created_at);
+    CREATE INDEX jobs_owner ON jobs (owner, created_at);
+    `,
   ];
 }

@@ -18,6 +18,10 @@ export class RenderError extends Error {
     MEDIA_DISABLED: 400,
     MEDIA_ERROR: 502,
     BUSY: 429,
+    QUEUE_FULL: 429,
+    JOB_NOT_FOUND: 404,
+    JOB_NOT_READY: 409,
+    UNKNOWN_FONT: 400,
     FORBIDDEN: 403,
   };
 

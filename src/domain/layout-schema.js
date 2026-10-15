@@ -74,6 +74,7 @@ export class LayoutSchema {
           orientation: { type: 'string', enum: ['portrait', 'landscape'] },
           margins: { type: 'object', additionalProperties: false, properties: { top: LayoutSchema.margin, right: LayoutSchema.margin, bottom: LayoutSchema.margin, left: LayoutSchema.margin } },
           fontSize: { type: 'number', minimum: 6, maximum: 18 },
+          font: { type: 'string', pattern: '^[a-z0-9][a-z0-9_]{0,47}$', description: 'A FONTS_DIR family id (GET /v1/fonts); default DejaVu Sans.' },
         },
       },
       header: LayoutSchema.band,

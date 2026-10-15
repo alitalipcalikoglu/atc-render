@@ -40,6 +40,8 @@ export class RenderService {
 
   /** @param {unknown} layout */
   #layoutJson(layout) {
+    const font = /** @type {Layout} */ (layout).page?.font;
+    if (font !== undefined && !Object.hasOwn(this.renderer.fonts, font)) throw new RenderError('UNKNOWN_FONT', `font "${font}" is not installed (FONTS_DIR)`, { font, installed: Object.keys(this.renderer.fonts) });
     const json = JSON.stringify(layout);
     if (Buffer.byteLength(json) > this.limits.maxLayoutBytes) throw new RenderError('LAYOUT_TOO_LARGE', `layout exceeds MAX_LAYOUT_BYTES (${this.limits.maxLayoutBytes})`);
     return json;

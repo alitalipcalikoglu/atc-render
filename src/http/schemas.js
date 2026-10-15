@@ -15,6 +15,8 @@ export class Schemas {
     properties: { template: Schemas.name, version: { type: 'integer', minimum: 1 }, data: Schemas.data, filename: { type: 'string', minLength: 1, maxLength: 120 }, store: { type: 'boolean' } },
   };
   static preview = { type: 'object', additionalProperties: false, required: ['layout'], properties: { layout: LayoutSchema.layout, data: Schemas.data } };
+  static jobParams = { type: 'object', properties: { id: { type: 'string', format: 'uuid' } }, required: ['id'] };
+  static jobsQuery = { type: 'object', additionalProperties: false, properties: { status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'failed'] }, limit: { type: 'string', pattern: '^([1-9]|[1-9][0-9]|1[0-9][0-9]|200)$' } } };
   static nameParams = { type: 'object', properties: { name: Schemas.name }, required: ['name'] };
   static versionParams = { type: 'object', properties: { name: Schemas.name, version: { type: 'string', pattern: '^[1-9][0-9]{0,8}$' } }, required: ['name', 'version'] };
 }

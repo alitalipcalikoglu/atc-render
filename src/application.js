@@ -3,7 +3,10 @@ import { AuditClient } from '@atc-web/atc-service-core/audit';
 import { Lifecycle } from '@atc-web/atc-service-core/lifecycle';
 import { readServiceVersion } from '@atc-web/atc-service-core/fastify';
 import { Database } from './db.js';
+import { JobRunner } from './domain/job-runner.js';
 import { RenderService } from './domain/render-service.js';
+import { FontCatalog } from './pdf/font-catalog.js';
+import { JobStore } from './store/job-store.js';
 import { RenderApi } from './http/render-api.js';
 import { MediaClient } from './net/media-client.js';
 import { ImageLoader } from './pdf/images.js';
@@ -26,9 +29,14 @@ export class Application {
     this.log = new RenderLog(this.db);
     this.media = config.media ? new MediaClient({ upstream: config.media, timeoutMs: config.limits.mediaTimeoutMs }) : null;
     // Drawing runs in worker threads (RENDER_WORKERS; 0 = in this thread): a heavy document never stalls the HTTP loop.
-    this.pool = config.limits.workers > 0 ? new RenderPool({ size: config.limits.workers, limits: config.limits }).start() : null;
-    this.renderer = new Renderer({ images: new ImageLoader({ media: this.media, limits: config.limits }), limits: config.limits, pool: this.pool });
+    const fonts = FontCatalog.scan(config.fontsDir);
+    this.pool = config.limits.workers > 0 ? new RenderPool({ size: config.limits.workers, limits: config.limits, fonts }).start() : null;
+    this.renderer = new Renderer({ images: new ImageLoader({ media: this.media, limits: config.limits }), limits: config.limits, pool: this.pool, fonts });
     this.service = new RenderService({ db: this.db, templates: this.templates, log: this.log, renderer: this.renderer, media: this.media, limits: config.limits });
+    this.jobs = new JobRunner({
+      jobs: new JobStore(this.db), service: this.service, log: /** @type {any} */ (console),
+      options: { jobConcurrency: config.limits.jobConcurrency, queueMax: config.limits.queueMax, jobRetentionMs: config.limits.jobRetentionHours * 3_600_000, maxDataBytes: config.limits.maxDataBytes },
+    });
     /** @type {import('fastify').FastifyInstance|null} */
     this.app = null;
     /** @type {NodeJS.Timeout|null} */
@@ -52,9 +60,16 @@ export class Application {
 
   async start() {
     const { config } = this;
-    const app = await new RenderApi({ config, audit: this.audit, service: this.service, pool: this.pool, templates: this.templates, db: this.db, version: this.version }).build();
+    const app = await new RenderApi({ config, audit: this.audit, service: this.service, jobs: this.jobs, pool: this.pool, templates: this.templates, db: this.db, version: this.version }).build();
     this.app = app;
-    const purge = () => { try { const n = this.service.purge(); if (n) app.log.info({ purged: n }, 'render log retention'); } catch (err) { app.log.error({ err }, 'render log retention failed'); } };
+    this.jobs.log = app.log.child({ component: 'jobs' });
+    const purge = () => {
+      try {
+        const n = this.service.purge();
+        const jobs = this.jobs.purge();
+        if (n || jobs) app.log.info({ purged: n, jobs }, 'render log and job retention');
+      } catch (err) { app.log.error({ err }, 'render log retention failed'); }
+    };
     purge();
     this.timer = setInterval(purge, Application.PURGE_INTERVAL_MS);
     this.timer.unref();
@@ -64,6 +79,7 @@ export class Application {
       steps: [
         () => { if (this.timer) clearInterval(this.timer); },
         () => this.app?.close(),
+        () => this.jobs.stop(),
         () => this.pool?.close(),
         () => this.audit.close(),
         () => this.db.close(),
@@ -74,6 +90,7 @@ export class Application {
     this.audit.start();
     await app.listen({ port: config.port, host: config.host });
     app.log.info({ tls: config.tls !== null, media: config.media !== null, concurrency: config.limits.concurrency }, config.tls ? 'serving HTTPS' : 'serving plain HTTP, terminate TLS at a reverse proxy');
+    this.jobs.start();
     if (process.send) process.send('ready'); // PM2 wait_ready
   }
 }

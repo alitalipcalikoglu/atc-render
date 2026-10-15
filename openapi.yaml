@@ -23,6 +23,7 @@ security:
 tags:
   - name: templates
   - name: render
+  - name: jobs
   - name: stats
   - name: ops
 paths:
@@ -341,6 +342,133 @@ paths:
         "422": { $ref: "#/components/responses/RenderFailed" }
         "429": { $ref: "#/components/responses/Busy" }
 
+  /v1/fonts:
+    get:
+      operationId: atc-render.fonts.list
+      summary: Font families a layout can name in page.font
+      description: "`default` is the built-in DejaVu family used when `page.font` is absent; `items` are the FONTS_DIR families."
+      tags: [templates]
+      responses:
+        "200":
+          description: Installed families.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [default, items]
+                properties:
+                  default: { type: string, const: dejavu }
+                  items: { type: array, items: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/renders:
+    post:
+      operationId: atc-render.jobs.create
+      summary: Queue an asynchronous render
+      description: >
+        Same body as `POST /v1/render`. The template version is pinned now (latest unless
+        `version` is given); the job is drawn in the background, at most `RENDER_JOB_CONCURRENCY`
+        at a time, and kept `RENDER_JOB_HOURS` after it finishes. Poll `GET /v1/renders/{id}`.
+        Only the submitting key can read the job. Role `read`.
+      tags: [jobs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [template]
+              properties:
+                template: { $ref: "#/components/schemas/TemplateName" }
+                version: { type: integer, minimum: 1 }
+                data: { type: object }
+                filename: { type: string, minLength: 1, maxLength: 120 }
+                store: { type: boolean, description: "Store the PDF in atc-media instead of keeping it here." }
+      responses:
+        "202":
+          description: Queued.
+          headers:
+            location: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job]
+                properties:
+                  job: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+        "429": { $ref: "#/components/responses/Busy" }
+    get:
+      operationId: atc-render.jobs.list
+      summary: The calling key's render jobs, newest first
+      tags: [jobs]
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [queued, running, succeeded, failed] } }
+        - { name: limit, in: query, required: false, description: "1-200, default 50.", schema: { type: string, pattern: "^([1-9]|[1-9][0-9]|1[0-9][0-9]|200)$" } }
+      responses:
+        "200":
+          description: Jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Job" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/renders/{id}:
+    get:
+      operationId: atc-render.jobs.get
+      summary: One render job
+      tags: [jobs]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job]
+                properties:
+                  job: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: "`JOB_NOT_FOUND` (unknown, purged, or another key's job).", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+
+  /v1/renders/{id}/pdf:
+    get:
+      operationId: atc-render.jobs.pdf
+      summary: The PDF of a finished job
+      tags: [jobs]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The PDF.
+          headers:
+            content-disposition: { schema: { type: string } }
+            x-render-pages: { schema: { type: string } }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: "`JOB_NOT_FOUND`.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        "409": { description: "`JOB_NOT_READY`: queued, running, failed, or stored in media (`details.fileId`).", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+
   /v1/stats:
     get:
       operationId: atc-render.stats.get
@@ -370,6 +498,16 @@ paths:
                       byTemplate: { type: object, additionalProperties: { type: integer } }
                   active: { type: integer }
                   concurrency: { type: integer }
+                  jobs:
+                    type: object
+                    description: Kept asynchronous jobs by status, plus RENDER_JOB_CONCURRENCY and RENDER_QUEUE_MAX.
+                    properties:
+                      queued: { type: integer }
+                      running: { type: integer }
+                      succeeded: { type: integer }
+                      failed: { type: integer }
+                      concurrency: { type: integer }
+                      queueMax: { type: integer }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -387,7 +525,7 @@ components:
       schema: { $ref: "#/components/schemas/TemplateName" }
   responses:
     BadRequest:
-      description: "`VALIDATION_FAILED` (layout or body against the schema; `details[].path` names the block), `INVALID_LAYOUT` (template name) or `MEDIA_DISABLED`."
+      description: "`VALIDATION_FAILED` (layout or body against the schema; `details[].path` names the block), `INVALID_LAYOUT` (template name), `UNKNOWN_FONT` (`page.font` is not a FONTS_DIR family) or `MEDIA_DISABLED`."
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
     Unauthorized:
       description: Missing or invalid API key.
@@ -409,12 +547,39 @@ components:
       description: "`RENDER_FAILED`, `TOO_MANY_PAGES`, `TOO_MANY_IMAGES`, `IMAGE_TOO_LARGE`, `IMAGE_UNSUPPORTED`, `RENDER_TIMEOUT` or `PDF_TOO_LARGE`; `details.block` is the block path, e.g. `blocks[3].rows`."
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
     Busy:
-      description: "`BUSY` (all render slots in use) or `RATE_LIMITED`."
+      description: "`BUSY` (all render slots in use), `QUEUE_FULL` (RENDER_QUEUE_MAX jobs waiting, on POST /v1/renders) or `RATE_LIMITED`."
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
     MediaError:
       description: "`MEDIA_ERROR`: atc-media could not store or sign the file."
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
   schemas:
+    Job:
+      type: object
+      required: [id, status, template, version, filename, store, createdBy, createdAt, startedAt, finishedAt, pages, bytes, error, result]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        template: { type: string }
+        version: { type: integer }
+        filename: { type: string }
+        store: { type: boolean }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, "null"], format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+        pages: { type: [integer, "null"] }
+        bytes: { type: [integer, "null"] }
+        error:
+          type: [object, "null"]
+          properties: { code: { type: string }, message: { type: string } }
+        result:
+          type: [object, "null"]
+          description: "Succeeded only: `{ download }` (GET it with the same key) or, with store, `{ fileId, url, expiresAt }` (the URL expires after DOWNLOAD_TTL_SEC; sign a new one in media)."
+          properties:
+            download: { type: string }
+            fileId: { type: string }
+            url: { type: string }
+            expiresAt: { type: [string, "null"], format: date-time }
     TemplateName: { type: string, pattern: "^[a-z][a-z0-9-]{0,63}$" }
     ErrorEnvelope:
       type: object
@@ -449,5 +614,5 @@ components:
         - type: object
           properties:
             layout: { $ref: "#/components/schemas/Layout" }
-    Layout: {"type":"object","additionalProperties":false,"required":["blocks"],"properties":{"page":{"type":"object","additionalProperties":false,"properties":{"size":{"type":"string","enum":["A4","Letter","A5"]},"orientation":{"type":"string","enum":["portrait","landscape"]},"margins":{"type":"object","additionalProperties":false,"properties":{"top":{"type":"number","minimum":18,"maximum":144},"right":{"type":"number","minimum":18,"maximum":144},"bottom":{"type":"number","minimum":18,"maximum":144},"left":{"type":"number","minimum":18,"maximum":144}}},"fontSize":{"type":"number","minimum":6,"maximum":18}}},"header":{"type":"object","additionalProperties":false,"required":["text"],"properties":{"text":{"type":"string","maxLength":500},"align":{"type":"string","enum":["left","center","right"]}}},"footer":{"type":"object","additionalProperties":false,"required":["text"],"properties":{"text":{"type":"string","maxLength":500},"align":{"type":"string","enum":["left","center","right"]}}},"blocks":{"type":"array","minItems":1,"maxItems":1000,"items":{"oneOf":[{"type":"object","additionalProperties":false,"required":["type","text"],"properties":{"type":{"const":"heading"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"level":{"type":"integer","enum":[1,2,3]},"text":{"type":"string","maxLength":10000},"align":{"type":"string","enum":["left","center","right"]},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}}},{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"text"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"text":{"type":"string","maxLength":10000},"runs":{"type":"array","minItems":1,"maxItems":200,"items":{"type":"object","additionalProperties":false,"required":["text"],"properties":{"text":{"type":"string","maxLength":10000},"bold":{"type":"boolean"},"italic":{"type":"boolean"},"mono":{"type":"boolean"},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}}}},"align":{"type":"string","enum":["left","center","right","justify"]},"fontSize":{"type":"number","minimum":6,"maximum":36},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}},"anyOf":[{"required":["text"]},{"required":["runs"]}]},{"type":"object","additionalProperties":false,"required":["type","items"],"properties":{"type":{"const":"keyValue"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"items":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","additionalProperties":false,"required":["label","value"],"properties":{"label":{"type":"string","maxLength":10000},"value":{"type":"string","maxLength":10000},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."}}}},"labelWidth":{"type":"number","minimum":0.1,"maximum":0.7}}},{"type":"object","additionalProperties":false,"required":["type","rows","columns"],"properties":{"type":{"const":"table"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"rows":{"type":"string","pattern":"^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Data path of an array; each element is one row."},"columns":{"type":"array","minItems":1,"maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["header","value"],"properties":{"header":{"type":"string","maxLength":10000},"value":{"type":"string","maxLength":10000},"width":{"type":"number","minimum":0.1,"maximum":100},"align":{"type":"string","enum":["left","center","right"]}}}},"zebra":{"type":"boolean"},"fontSize":{"type":"number","minimum":6,"maximum":18},"empty":{"type":"string","maxLength":10000}}},{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"image"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"fileId":{"type":"string","minLength":1,"maxLength":128,"pattern":"^[A-Za-z0-9_.:-]+$"},"data":{"type":"string","minLength":8,"maxLength":4000000,"pattern":"^[A-Za-z0-9+/=\\s]+$"},"width":{"type":"number","minimum":8,"maximum":2000},"height":{"type":"number","minimum":8,"maximum":2000},"align":{"type":"string","enum":["left","center","right"]}},"oneOf":[{"required":["fileId"]},{"required":["data"]}]},{"type":"object","additionalProperties":false,"required":["type","value"],"properties":{"type":{"const":"qr"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"value":{"type":"string","minLength":1,"maxLength":2000},"size":{"type":"number","minimum":40,"maximum":400},"align":{"type":"string","enum":["left","center","right"]}}},{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"divider"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}}},{"type":"object","additionalProperties":false,"required":["type","height"],"properties":{"type":{"const":"spacer"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"height":{"type":"number","minimum":1,"maximum":800}}},{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"pageBreak"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."}}}]}}}}
+    Layout: {"type":"object","additionalProperties":false,"required":["blocks"],"properties":{"page":{"type":"object","additionalProperties":false,"properties":{"size":{"type":"string","enum":["A4","Letter","A5"]},"orientation":{"type":"string","enum":["portrait","landscape"]},"margins":{"type":"object","additionalProperties":false,"properties":{"top":{"type":"number","minimum":18,"maximum":144},"right":{"type":"number","minimum":18,"maximum":144},"bottom":{"type":"number","minimum":18,"maximum":144},"left":{"type":"number","minimum":18,"maximum":144}}},"fontSize":{"type":"number","minimum":6,"maximum":18},"font":{"type":"string","pattern":"^[a-z0-9][a-z0-9_]{0,47}$","description":"A FONTS_DIR family id (GET /v1/fonts); default DejaVu Sans."}}},"header":{"type":"object","additionalProperties":false,"required":["text"],"properties":{"text":{"type":"string","maxLength":500},"align":{"type":"string","enum":["left","center","right"]}}},"footer":{"type":"object","additionalProperties":false,"required":["text"],"properties":{"text":{"type":"string","maxLength":500},"align":{"type":"string","enum":["left","center","right"]}}},"blocks":{"type":"array","minItems":1,"maxItems":1000,"items":{"oneOf":[{"type":"object","additionalProperties":false,"required":["type","text"],"properties":{"type":{"const":"heading"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"level":{"type":"integer","enum":[1,2,3]},"text":{"type":"string","maxLength":10000},"align":{"type":"string","enum":["left","center","right"]},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}}},{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"text"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"text":{"type":"string","maxLength":10000},"runs":{"type":"array","minItems":1,"maxItems":200,"items":{"type":"object","additionalProperties":false,"required":["text"],"properties":{"text":{"type":"string","maxLength":10000},"bold":{"type":"boolean"},"italic":{"type":"boolean"},"mono":{"type":"boolean"},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}}}},"align":{"type":"string","enum":["left","center","right","justify"]},"fontSize":{"type":"number","minimum":6,"maximum":36},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}},"anyOf":[{"required":["text"]},{"required":["runs"]}]},{"type":"object","additionalProperties":false,"required":["type","items"],"properties":{"type":{"const":"keyValue"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"items":{"type":"array","minItems":1,"maxItems":100,"items":{"type":"object","additionalProperties":false,"required":["label","value"],"properties":{"label":{"type":"string","maxLength":10000},"value":{"type":"string","maxLength":10000},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."}}}},"labelWidth":{"type":"number","minimum":0.1,"maximum":0.7}}},{"type":"object","additionalProperties":false,"required":["type","rows","columns"],"properties":{"type":{"const":"table"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"rows":{"type":"string","pattern":"^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Data path of an array; each element is one row."},"columns":{"type":"array","minItems":1,"maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["header","value"],"properties":{"header":{"type":"string","maxLength":10000},"value":{"type":"string","maxLength":10000},"width":{"type":"number","minimum":0.1,"maximum":100},"align":{"type":"string","enum":["left","center","right"]}}}},"zebra":{"type":"boolean"},"fontSize":{"type":"number","minimum":6,"maximum":18},"empty":{"type":"string","maxLength":10000}}},{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"image"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"fileId":{"type":"string","minLength":1,"maxLength":128,"pattern":"^[A-Za-z0-9_.:-]+$"},"data":{"type":"string","minLength":8,"maxLength":4000000,"pattern":"^[A-Za-z0-9+/=\\s]+$"},"width":{"type":"number","minimum":8,"maximum":2000},"height":{"type":"number","minimum":8,"maximum":2000},"align":{"type":"string","enum":["left","center","right"]}},"oneOf":[{"required":["fileId"]},{"required":["data"]}]},{"type":"object","additionalProperties":false,"required":["type","value"],"properties":{"type":{"const":"qr"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"value":{"type":"string","minLength":1,"maxLength":2000},"size":{"type":"number","minimum":40,"maximum":400},"align":{"type":"string","enum":["left","center","right"]}}},{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"divider"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"color":{"type":"string","pattern":"^#[0-9A-Fa-f]{6}$"}}},{"type":"object","additionalProperties":false,"required":["type","height"],"properties":{"type":{"const":"spacer"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."},"height":{"type":"number","minimum":1,"maximum":800}}},{"type":"object","additionalProperties":false,"required":["type"],"properties":{"type":{"const":"pageBreak"},"if":{"type":"string","pattern":"^!?[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z0-9_$]+){0,15}$","description":"Render the block only when this data path is truthy; prefix ! to negate."}}}]}}}}
 

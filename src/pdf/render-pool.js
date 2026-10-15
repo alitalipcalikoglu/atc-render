@@ -10,8 +10,9 @@ import { RenderError } from '../domain/errors.js';
 export class RenderPool {
   static GRACE_MS = 1_000;
 
-  /** @param {{ size: number, limits: import('../types.js').Limits, compress?: boolean, workerUrl?: URL }} o  `workerUrl` is for tests. */
-  constructor({ size, limits, compress = true, workerUrl = new URL('./render-worker.js', import.meta.url) }) {
+  /** @param {{ size: number, limits: import('../types.js').Limits, compress?: boolean, workerUrl?: URL, fonts?: Record<string, import('./font-catalog.js').FontFaces> }} o  `workerUrl` is for tests. */
+  constructor({ size, limits, compress = true, workerUrl = new URL('./render-worker.js', import.meta.url), fonts = {} }) {
+    this.fonts = fonts;
     this.size = size;
     this.limits = limits;
     this.compress = compress;
@@ -37,7 +38,7 @@ export class RenderPool {
 
   /** Give a slot a fresh worker. @param {{ worker: Worker, job: any }} slot */
   #attach(slot) {
-    const w = new Worker(this.url, { workerData: { limits: this.limits, compress: this.compress } });
+    const w = new Worker(this.url, { workerData: { limits: this.limits, compress: this.compress, fonts: this.fonts } });
     slot.worker = w;
     w.on('message', (msg) => { if (slot.worker === w) this.#done(slot, msg); });
     w.on('error', (err) => { if (slot.worker === w) this.#died(slot, err); });

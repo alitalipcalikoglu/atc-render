@@ -10,8 +10,9 @@ Scenario-driven walkthroughs of every feature. Requests to `/v1/*` need `Authori
 | [Report with a long table](report.md) | Table across many pages with repeated header and zebra rows, page numbers |
 | [Templates and versions](templates.md) | Creating, publishing immutable versions, rendering an older version, deleting |
 | [Rendering and storing](rendering.md) | Direct PDF download, `store: true` into media with a signed URL, previews of unsaved layouts |
+| [Asynchronous renders](async-renders.md) | Queue a large document, poll, download or store in media, queue limits, retention |
 | [Errors and limits](limits.md) | Validation paths, 422 with block paths, page/data/image caps, timeouts, 429 |
-| [Fonts and languages](fonts.md) | The embedded DejaVu family, Turkish and other scripts, mono text |
+| [Fonts and languages](fonts.md) | The embedded DejaVu family, Turkish and other scripts, mono text, your own families in `FONTS_DIR` |
 | [API keys and roles](keys-and-roles.md) | Read renders, write designs |
 | [Operations](operations.md) | Health, readiness, metrics, stats, PM2, Docker |
 | [Audit events](audit-events.md) | Which actions are forwarded to the audit service |
