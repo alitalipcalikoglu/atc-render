@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { Ids } from '@atc-web/atc-service-core/ids';
 import { RenderError } from './errors.js';
 
 /** @typedef {import('../store/job-store.js').JobRow} JobRow */
@@ -61,7 +61,7 @@ export class JobRunner {
     const data = JSON.stringify(input.data ?? {});
     if (Buffer.byteLength(data) > this.options.maxDataBytes) throw new RenderError('DATA_TOO_LARGE', `data exceeds MAX_DATA_BYTES (${this.options.maxDataBytes})`);
     if (this.jobs.pending() >= this.options.queueMax) throw new RenderError('QUEUE_FULL', `${this.options.queueMax} jobs are already waiting (RENDER_QUEUE_MAX); retry later`);
-    const id = randomUUID();
+    const id = Ids.create('rnd');
     this.jobs.insert({ id, owner, actor, template: v.name, version: v.version, data, filename: input.filename ?? `${v.name}-v${v.version}`, store: Boolean(input.store) }, this.now());
     this.pump();
     return /** @type {JobRow} */ (this.jobs.get(id));

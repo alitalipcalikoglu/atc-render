@@ -35,8 +35,7 @@ export class JobStore {
       insert: db.prepare('INSERT INTO jobs (id, owner, actor, template, version, data, filename, store, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'queued\', ?)'),
       get: db.prepare(`SELECT ${c} FROM jobs WHERE id = ?`),
       pdf: db.prepare('SELECT pdf FROM jobs WHERE id = ?'),
-      list: db.prepare(`SELECT ${c} FROM jobs WHERE owner = ? ORDER BY created_at DESC, id DESC LIMIT ?`),
-      listStatus: db.prepare(`SELECT ${c} FROM jobs WHERE owner = ? AND status = ? ORDER BY created_at DESC, id DESC LIMIT ?`),
+      list: db.prepare(`SELECT ${c} FROM jobs WHERE owner = ? AND (? IS NULL OR status = ?) AND id < ? ORDER BY id DESC LIMIT ?`),
       next: db.prepare(`SELECT ${c} FROM jobs WHERE status = 'queued' ORDER BY created_at, id LIMIT 1`),
       claim: db.prepare("UPDATE jobs SET status = 'running', started_at = ? WHERE id = ? AND status = 'queued'"),
       requeue: db.prepare("UPDATE jobs SET status = 'queued', started_at = NULL WHERE id = ?"),
@@ -55,8 +54,8 @@ export class JobStore {
   get(id) { return /** @type {any} */ (this.stmt.get.get(id)); }
   /** @param {string} id @returns {Buffer|null} */
   pdf(id) { const r = /** @type {{ pdf: Uint8Array|null }|undefined} */ (this.stmt.pdf.get(id)); return r?.pdf ? Buffer.from(r.pdf) : null; }
-  /** @param {string} owner @param {{ status?: string, limit: number }} q @returns {JobRow[]} */
-  list(owner, q) { return /** @type {any} */ (q.status ? this.stmt.listStatus.all(owner, q.status, q.limit) : this.stmt.list.all(owner, q.limit)); }
+  /** Newest first; ids sort by creation time, so `before` (an id) is the keyset cursor. @param {string} owner @param {{ status?: string, before?: string, limit: number }} q @returns {JobRow[]} */
+  list(owner, q) { return /** @type {any} */ (this.stmt.list.all(owner, q.status ?? null, q.status ?? null, q.before ?? '~', q.limit)); }
   /** Oldest queued job, claimed as running; undefined when the queue is empty. @param {number} now @returns {JobRow|undefined} */
   claimNext(now) {
     for (;;) {

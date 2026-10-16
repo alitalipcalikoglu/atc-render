@@ -14,7 +14,7 @@ curl -X POST "$RENDER/v1/renders" -H "Authorization: Bearer $KEY" -H 'content-ty
 `202` with a `location: /v1/renders/<id>` header:
 
 ```json
-{ "job": { "id": "6f0c…", "status": "queued", "template": "monthly-report", "version": 4, "filename": "report-2026-09.pdf", "store": false,
+{ "job": { "id": "rnd_mv7q2b1k9c4e7a0d3f6b2e81", "status": "queued", "template": "monthly-report", "version": 4, "filename": "report-2026-09.pdf", "store": false,
   "createdBy": "billing", "createdAt": "2026-10-16T08:00:00.000Z", "startedAt": null, "finishedAt": null, "pages": null, "bytes": null, "error": null, "result": null } }
 ```
 
@@ -23,7 +23,7 @@ The template version is pinned now: publishing version 5 while the job waits doe
 ## Poll
 
 ```bash
-curl "$RENDER/v1/renders/6f0c…" -H "Authorization: Bearer $KEY"
+curl "$RENDER/v1/renders/rnd_mv7q2b1k9c4e7a0d3f6b2e81" -H "Authorization: Bearer $KEY"
 ```
 
 `status` moves `queued` → `running` → `succeeded` or `failed`. Poll every one or two seconds; a job never takes longer than `RENDER_TIMEOUT_MS` once it runs.
@@ -31,19 +31,19 @@ curl "$RENDER/v1/renders/6f0c…" -H "Authorization: Bearer $KEY"
 Succeeded:
 
 ```json
-{ "job": { "id": "6f0c…", "status": "succeeded", "pages": 37, "bytes": 412883, "result": { "download": "/v1/renders/6f0c…/pdf" }, "…": "…" } }
+{ "job": { "id": "rnd_mv7q2b1k9c4e7a0d3f6b2e81", "status": "succeeded", "pages": 37, "bytes": 412883, "result": { "download": "/v1/renders/rnd_mv7q2b1k9c4e7a0d3f6b2e81/pdf" }, "…": "…" } }
 ```
 
 Failed (the same codes as synchronous renders, e.g. `TOO_MANY_PAGES` with the block path in the message):
 
 ```json
-{ "job": { "id": "6f0c…", "status": "failed", "error": { "code": "TOO_MANY_PAGES", "message": "the document would exceed MAX_PAGES (50)" }, "result": null, "…": "…" } }
+{ "job": { "id": "rnd_mv7q2b1k9c4e7a0d3f6b2e81", "status": "failed", "error": { "code": "TOO_MANY_PAGES", "message": "the document would exceed MAX_PAGES (50)" }, "result": null, "…": "…" } }
 ```
 
 ## Download
 
 ```bash
-curl -OJ "$RENDER/v1/renders/6f0c…/pdf" -H "Authorization: Bearer $KEY"
+curl -OJ "$RENDER/v1/renders/rnd_mv7q2b1k9c4e7a0d3f6b2e81/pdf" -H "Authorization: Bearer $KEY"
 ```
 
 Before the job succeeds this answers `409 JOB_NOT_READY` with `details.status`.
@@ -63,6 +63,8 @@ The URL expires after `DOWNLOAD_TTL_SEC`; later, ask atc-media for a new one wit
 ```bash
 curl "$RENDER/v1/renders?status=failed&limit=20" -H "Authorization: Bearer $KEY"
 ```
+
+The answer is `{ items, nextCursor }`; pass `nextCursor` back as `&cursor=` for older jobs.
 
 Only the submitting key sees its jobs; another key gets `404 JOB_NOT_FOUND`.
 

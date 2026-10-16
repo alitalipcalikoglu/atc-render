@@ -3,6 +3,7 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 import { AuditClient } from '@atc-web/atc-service-core/audit';
 import { createErrorHandler, registerInfo, registerOpenApi, registerProbes, registerRequestContext, requestOptions } from '@atc-web/atc-service-core/fastify';
+import { Idempotency } from '@atc-web/atc-service-core/idempotency';
 import { RenderError } from '../domain/errors.js';
 import { RenderService } from '../domain/render-service.js';
 import { Actor } from './actor.js';
@@ -67,6 +68,8 @@ export class RenderApi {
       reply.header('x-content-type-options', 'nosniff');
       if (!reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
     });
+    // Opt-in per route (config.idempotent): repeats with the same Idempotency-Key replay the first 2xx answer.
+    Idempotency.register(app, { raw: this.db.raw });
     registerProbes(app, () => this.db.ping(), { cacheMs: RenderApi.READY_CACHE_MS });
     registerOpenApi(app, new URL('../../openapi.yaml', import.meta.url));
     registerInfo(app, {
@@ -111,9 +114,9 @@ export class RenderApi {
     const name = (/** @type {FastifyRequest} */ r) => /** @type {{ name: string }} */ (r.params).name;
     const target = (/** @type {FastifyRequest} */ r) => ({ type: 'template', id: name(r) });
 
-    api.get('/templates', read, async () => ({ items: this.templates.all().map(Views.template) }));
+    api.get('/templates', read, async () => ({ items: this.templates.all().map(Views.template), nextCursor: null }));
 
-    api.post('/templates', { config: { audit: AuditClient.route('atc-render.template.create', (_r, b) => ({ type: 'template', id: b.template.name }), (_r, b) => ({ version: b.template.latestVersion })) }, ...write, schema: { body: Schemas.create } }, async (request, reply) => {
+    api.post('/templates', { config: { idempotent: true, audit: AuditClient.route('atc-render.template.create', (_r, b) => ({ type: 'template', id: b.template.name }), (_r, b) => ({ version: b.template.latestVersion })) }, ...write, schema: { body: Schemas.create } }, async (request, reply) => {
       const t = s.create(/** @type {any} */ (request.body), who.of(request));
       reply.header('location', `/v1/templates/${t.name}`);
       return reply.code(201).send({ template: Views.template(t) });
@@ -131,7 +134,7 @@ export class RenderApi {
       return reply.code(204).send();
     });
 
-    api.post('/templates/:name/versions', { config: { audit: AuditClient.route('atc-render.version.create', target, (_r, b) => ({ version: b.version.version })) }, ...write, schema: { params: Schemas.nameParams, body: Schemas.version } }, async (request, reply) => {
+    api.post('/templates/:name/versions', { config: { idempotent: true, audit: AuditClient.route('atc-render.version.create', target, (_r, b) => ({ version: b.version.version })) }, ...write, schema: { params: Schemas.nameParams, body: Schemas.version } }, async (request, reply) => {
       const v = s.publish(name(request), /** @type {any} */ (request.body), who.of(request));
       return reply.code(201).send({ version: Views.version(v) });
     });
@@ -152,14 +155,14 @@ export class RenderApi {
 
     api.post('/render/preview', { config: { audit: AuditClient.route('atc-render.document.preview', () => ({ type: 'layout', id: 'preview' })) }, ...write, schema: { body: Schemas.preview } }, async (request, reply) => RenderApi.#pdf(reply, await s.preview(/** @type {any} */ (request.body), who.of(request))));
 
-    api.get('/fonts', read, async () => ({ default: 'dejavu', items: Object.keys(s.renderer.fonts).sort() }));
+    api.get('/fonts', read, async () => ({ default: 'dejavu', items: Object.keys(s.renderer.fonts).sort(), nextCursor: null }));
 
     const jobs = this.jobs;
     if (jobs) {
       const owner = (/** @type {FastifyRequest} */ r) => /** @type {{ id: string }} */ (r.apiKey).id;
       const jobId = (/** @type {FastifyRequest} */ r) => /** @type {{ id: string }} */ (r.params).id;
       api.post('/renders', {
-        config: { audit: AuditClient.route('atc-render.job.create', (_r, b) => ({ type: 'job', id: b.job.id }), (_r, b) => ({ template: b?.job?.template, version: b?.job?.version, store: b?.job?.store })) },
+        config: { idempotent: true, audit: AuditClient.route('atc-render.job.create', (_r, b) => ({ type: 'job', id: b.job.id }), (_r, b) => ({ template: b?.job?.template, version: b?.job?.version, store: b?.job?.store })) },
         ...read, schema: { body: Schemas.render },
       }, async (request, reply) => {
         const j = jobs.submit(/** @type {any} */ (request.body), owner(request), who.of(request));
@@ -167,8 +170,11 @@ export class RenderApi {
         return reply.code(202).send({ job: Views.job(j) });
       });
       api.get('/renders', { ...read, schema: { querystring: Schemas.jobsQuery } }, async (request) => {
-        const q = /** @type {{ status?: string, limit?: string }} */ (request.query);
-        return { items: jobs.jobs.list(owner(request), { status: q.status, limit: q.limit ? Number(q.limit) : 50 }).map(Views.job) };
+        const q = /** @type {{ status?: string, limit?: string, cursor?: string }} */ (request.query);
+        const limit = q.limit ? Number(q.limit) : 50;
+        const rows = jobs.jobs.list(owner(request), { status: q.status, before: q.cursor, limit: limit + 1 });
+        const page = rows.slice(0, limit);
+        return { items: page.map(Views.job), nextCursor: rows.length > limit ? page[page.length - 1].id : null };
       });
       api.get('/renders/:id', { ...read, schema: { params: Schemas.jobParams } }, async (request) => ({ job: Views.job(jobs.get(jobId(request), owner(request))) }));
       api.get('/renders/:id/pdf', { ...read, schema: { params: Schemas.jobParams } }, async (request, reply) => {

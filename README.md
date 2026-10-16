@@ -64,13 +64,18 @@ All `/v1/*` routes and `/metrics` need `Authorization: Bearer <secret>`.
 | POST | `/v1/render` | read | `{ template, version?, data, filename?, store? }` → `application/pdf` attachment, or `201 { fileId, url, expiresAt, pages, bytes, version }` with `store: true` |
 | POST | `/v1/render/preview` | write | `{ layout, data }` → PDF of an unsaved layout |
 | POST | `/v1/renders` | read | Same body as `/v1/render` → `202 { job }`: queued, drawn in the background, kept `RENDER_JOB_HOURS` |
-| GET | `/v1/renders?status=&limit=` | read | The calling key's jobs, newest first |
+| GET | `/v1/renders?status=&limit=&cursor=` | read | The calling key's jobs, newest first |
 | GET | `/v1/renders/:id` | read | Job status, `error`, `result` (`{ download }` or, with `store`, `{ fileId, url, expiresAt }`) |
 | GET | `/v1/renders/:id/pdf` | read | The finished PDF; `409 JOB_NOT_READY` until then |
 | GET | `/v1/fonts` | read | `{ default: "dejavu", items }`: families a layout can name in `page.font` |
 | GET | `/v1/stats` | read | Templates; last 24 h renders, failures by code, average ms, pages, bytes, stored, per template |
 
 PDF responses carry `content-disposition: attachment`, `content-security-policy: default-src 'none'; sandbox`, `x-render-pages` and `x-render-ms`. Errors are `{ "error": { "code", "message", "details"? } }`: `VALIDATION_FAILED`, `INVALID_LAYOUT`, `MEDIA_DISABLED` (400); `TEMPLATE_NOT_FOUND`, `VERSION_NOT_FOUND` (404); `TEMPLATE_EXISTS` (409); `DATA_TOO_LARGE`, `LAYOUT_TOO_LARGE` (413); `RENDER_FAILED`, `TOO_MANY_PAGES`, `TOO_MANY_IMAGES`, `IMAGE_TOO_LARGE`, `IMAGE_UNSUPPORTED`, `RENDER_TIMEOUT`, `PDF_TOO_LARGE` (422); `BUSY`, `RATE_LIMITED` (429); `MEDIA_ERROR` (502).
+
+## Conventions
+
+- Lists answer `{ items, nextCursor }`; pass `nextCursor` back as `cursor`. Templates and fonts are complete lists (`nextCursor: null`); render jobs page newest first. Jobs have `rnd_<time><random>` ids (the platform's one id format); template names are natural keys.
+- Template creation, version publishing and async render submission honour `Idempotency-Key`: a repeat with the same key (per API key and caller — the console's `X-Actor` counts — for 24 h) replays the first 2xx answer with `Idempotent-Replayed: true`; another body is `409 IDEMPOTENCY_MISMATCH`.
 
 ## Examples
 

@@ -67,7 +67,7 @@ test('FontCatalog: families, fallbacks, reserved names, broken files', () => {
 
 test('page.font selects a FONTS_DIR family; unknown fonts are refused at save and preview', async () => {
   const { app } = await system({}, { fonts: FontCatalog.scan(fontsDir) });
-  assert.deepEqual((await app.inject({ url: '/v1/fonts', headers: bearer(READ_KEY) })).json(), { default: 'dejavu', items: ['testface'] });
+  assert.deepEqual((await app.inject({ url: '/v1/fonts', headers: bearer(READ_KEY) })).json(), { default: 'dejavu', items: ['testface'], nextCursor: null });
   const res = await app.inject({ method: 'POST', url: '/v1/render/preview', headers: bearer(RW_KEY), payload: { layout: { ...layout, page: { font: 'testface' } }, data: { no: 1 } } });
   assert.equal(res.statusCode, 200, res.body);
   const pdf = res.rawPayload.toString('latin1');
@@ -104,8 +104,17 @@ test('async renders: queued, drawn in the background, owner-scoped, PDF download
   assert.equal((await app.inject({ url: `/v1/renders/${job.id}`, headers: bearer(READ_KEY) })).statusCode, 404, 'another key cannot see it');
   const list = (await app.inject({ url: '/v1/renders?status=succeeded', headers: bearer(RW_KEY) })).json().items;
   assert.equal(list.length, 1);
-  assert.equal((await app.inject({ url: '/v1/stats', headers: bearer(RW_KEY) })).json().jobs.succeeded, 1);
-  assert.match((await app.inject({ url: '/metrics', headers: bearer(RW_KEY) })).body, /render_jobs\{status="succeeded"\} 1/);
+  const idem = { ...bearer(RW_KEY), 'idempotency-key': 'render-inv-8' };
+  const second = (await app.inject({ method: 'POST', url: '/v1/renders', headers: idem, payload: { template: 'invoice', data: { no: 8 } } })).json().job;
+  const replay = await app.inject({ method: 'POST', url: '/v1/renders', headers: idem, payload: { template: 'invoice', data: { no: 8 } } });
+  assert.deepEqual([replay.statusCode, replay.headers['idempotent-replayed'], replay.json().job.id], [202, 'true', second.id], 'a repeated submit replays instead of queueing again');
+  await settle(jobs);
+  const p1 = (await app.inject({ url: '/v1/renders?limit=1', headers: bearer(RW_KEY) })).json();
+  assert.deepEqual([p1.items[0].id, p1.nextCursor], [second.id, second.id]);
+  const p2 = (await app.inject({ url: `/v1/renders?limit=1&cursor=${p1.nextCursor}`, headers: bearer(RW_KEY) })).json();
+  assert.deepEqual([p2.items.map((/** @type {any} */ j) => j.id), p2.nextCursor], [[job.id], null], 'newest first, last page has no cursor');
+  assert.equal((await app.inject({ url: '/v1/stats', headers: bearer(RW_KEY) })).json().jobs.succeeded, 2);
+  assert.match((await app.inject({ url: '/metrics', headers: bearer(RW_KEY) })).body, /render_jobs\{status="succeeded"\} 2/);
   await jobs.stop();
   await app.close();
 });

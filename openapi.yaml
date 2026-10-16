@@ -122,11 +122,13 @@ paths:
           description: Every template, by name.
           content:
             application/json:
-              schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/Template" } } } }
+              schema: { type: object, required: [items, nextCursor], properties: { items: { type: array, items: { $ref: "#/components/schemas/Template" } }, nextCursor: { type: "null", description: Always null; the list is complete. } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       operationId: atc-render.templates.create
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       summary: Create a template with its first version
       tags: [templates]
       requestBody:
@@ -212,6 +214,8 @@ paths:
       - $ref: "#/components/parameters/NameParam"
     post:
       operationId: atc-render.versions.create
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       summary: Publish a new immutable version
       description: The new version becomes the latest; versions beyond `MAX_VERSIONS` (100) are pruned, oldest first. Numbers are never reused.
       tags: [templates]
@@ -355,16 +359,19 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [default, items]
+                required: [default, items, nextCursor]
                 properties:
                   default: { type: string, const: dejavu }
                   items: { type: array, items: { type: string } }
+                  nextCursor: { type: "null", description: Always null; the list is complete. }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
   /v1/renders:
     post:
       operationId: atc-render.jobs.create
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
       summary: Queue an asynchronous render
       description: >
         Same body as `POST /v1/render`. The template version is pinned now (latest unless
@@ -411,6 +418,7 @@ paths:
       parameters:
         - { name: status, in: query, required: false, schema: { type: string, enum: [queued, running, succeeded, failed] } }
         - { name: limit, in: query, required: false, description: "1-200, default 50.", schema: { type: string, pattern: "^([1-9]|[1-9][0-9]|1[0-9][0-9]|200)$" } }
+        - { name: cursor, in: query, required: false, description: "Opaque `nextCursor` from the previous page.", schema: { $ref: "#/components/schemas/JobId" } }
       responses:
         "200":
           description: Jobs.
@@ -418,9 +426,10 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, nextCursor]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/Job" } }
+                  nextCursor: { type: [string, "null"], description: Pass as `cursor` for older jobs; null on the last page. }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
@@ -431,7 +440,7 @@ paths:
       summary: One render job
       tags: [jobs]
       parameters:
-        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { $ref: "#/components/schemas/JobId" } }
       responses:
         "200":
           description: The job.
@@ -453,7 +462,7 @@ paths:
       summary: The PDF of a finished job
       tags: [jobs]
       parameters:
-        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: id, in: path, required: true, schema: { $ref: "#/components/schemas/JobId" } }
       responses:
         "200":
           description: The PDF.
@@ -518,6 +527,12 @@ components:
       scheme: bearer
       description: "`Authorization: Bearer <secret>`. Keys are `id:secret[:role]` in `RENDER_API_KEYS`; role `read` (render), `write` (templates, preview) or `readwrite` (default)."
   parameters:
+    IdempotencyKeyHeader:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: "Optional. Repeats of this POST with the same key (per API key, 24 h) replay the first 2xx answer with `Idempotent-Replayed: true` instead of running again; the same key with another method, path or body is `409 IDEMPOTENCY_MISMATCH`, while the first still runs `409 IDEMPOTENCY_IN_PROGRESS`."
+      schema: { type: string, pattern: '^[A-Za-z0-9._:-]{8,255}$' }
     NameParam:
       name: name
       in: path
@@ -553,11 +568,12 @@ components:
       description: "`MEDIA_ERROR`: atc-media could not store or sign the file."
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
   schemas:
+    JobId: { type: string, pattern: "^rnd_[0-9a-z]{6,12}[0-9a-f]{16}$", description: "Platform id format: `rnd_<time><random>`." }
     Job:
       type: object
       required: [id, status, template, version, filename, store, createdBy, createdAt, startedAt, finishedAt, pages, bytes, error, result]
       properties:
-        id: { type: string, format: uuid }
+        id: { $ref: "#/components/schemas/JobId" }
         status: { type: string, enum: [queued, running, succeeded, failed] }
         template: { type: string }
         version: { type: integer }
