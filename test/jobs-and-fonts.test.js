@@ -115,7 +115,12 @@ test('async renders: queued, drawn in the background, owner-scoped, PDF download
   assert.deepEqual([p2.items.map((/** @type {any} */ j) => j.id), p2.nextCursor], [[job.id], null], 'newest first, last page has no cursor');
   assert.equal((await app.inject({ url: '/v1/stats', headers: bearer(RW_KEY) })).json().jobs.succeeded, 2);
   assert.match((await app.inject({ url: '/metrics', headers: bearer(RW_KEY) })).body, /render_jobs\{status="succeeded"\} 2/);
-  await jobs.stop();
+  await jobs.stop(); // the runner is stopped, so the next submit stays queued and can be cancelled
+  const queued = (await app.inject({ method: 'POST', url: '/v1/renders', headers: bearer(RW_KEY), payload: { template: 'invoice', data: { no: 9 } } })).json().job;
+  const cancelled = await app.inject({ method: 'POST', url: `/v1/renders/${queued.id}/cancel`, headers: bearer(RW_KEY) });
+  const finishedCancel = await app.inject({ method: 'POST', url: `/v1/renders/${job.id}/cancel`, headers: bearer(RW_KEY) });
+  assert.deepEqual([cancelled.statusCode, cancelled.json().job.status, finishedCancel.statusCode, finishedCancel.json().error.code], [200, 'cancelled', 409, 'INVALID_STATE'], 'a queued job cancels; a finished one refuses');
+  assert.equal((await app.inject({ url: '/v1/renders?status=cancelled', headers: bearer(RW_KEY) })).json().items[0]?.id, queued.id);
   await app.close();
 });
 

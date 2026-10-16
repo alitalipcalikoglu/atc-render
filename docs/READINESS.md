@@ -49,7 +49,7 @@ None. A failed media call fails the render (`MEDIA_ERROR` 502 or `RENDER_FAILED`
 ## Idempotency
 Rendering is deterministic for a version and data apart from the PDF creation date; `store: true`
 creates a new media file every time. `POST /v1/templates`, `POST /v1/templates/:name/versions` and
-`POST /v1/renders` honour `Idempotency-Key` (core `Idempotency`, 24 h, per API key and caller): a
+`POST /v1/renders` and `POST /v1/renders/:id/cancel` honour `Idempotency-Key` (core `Idempotency`, 24 h, per API key and caller): a
 repeat replays the first answer instead of adding a version or queueing another job. Without the
 header a repeated template create is 409 and publishing a version always adds a number. The
 synchronous `POST /v1/render` answers with PDF bytes and is not cached.

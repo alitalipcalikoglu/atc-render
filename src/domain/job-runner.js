@@ -74,6 +74,13 @@ export class JobRunner {
     return j;
   }
 
+  /** @param {string} id @param {string} owner @returns {JobRow} */
+  cancel(id, owner) {
+    const j = this.get(id, owner);
+    if (!this.jobs.cancel(id, this.now())) throw new RenderError('INVALID_STATE', `only a queued job can be cancelled; this one is ${j.status}`, { status: j.status });
+    return /** @type {JobRow} */ (this.jobs.get(id));
+  }
+
   /** @param {string} id @param {string} owner */
   pdf(id, owner) {
     const j = this.get(id, owner);

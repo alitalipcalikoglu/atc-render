@@ -10,7 +10,7 @@
  * @property {string} data         JSON.
  * @property {string} filename
  * @property {number} store
- * @property {'queued'|'running'|'succeeded'|'failed'} status
+ * @property {'queued'|'running'|'succeeded'|'failed'|'cancelled'} status
  * @property {string|null} error_code
  * @property {string|null} error_message
  * @property {number|null} pages
@@ -41,6 +41,7 @@ export class JobStore {
       requeue: db.prepare("UPDATE jobs SET status = 'queued', started_at = NULL WHERE id = ?"),
       recover: db.prepare("UPDATE jobs SET status = 'queued', started_at = NULL WHERE status = 'running'"),
       succeed: db.prepare("UPDATE jobs SET status = 'succeeded', pages = ?, bytes = ?, pdf = ?, file_id = ?, url = ?, url_expires_at = ?, data = '{}', finished_at = ? WHERE id = ?"),
+      cancel: db.prepare("UPDATE jobs SET status = 'cancelled', data = '{}', finished_at = ? WHERE id = ? AND status = 'queued'"),
       fail: db.prepare("UPDATE jobs SET status = 'failed', error_code = ?, error_message = ?, data = '{}', finished_at = ? WHERE id = ?"),
       pending: db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status IN ('queued', 'running')"),
       counts: db.prepare('SELECT status, COUNT(*) AS n FROM jobs GROUP BY status'),
@@ -54,6 +55,9 @@ export class JobStore {
   get(id) { return /** @type {any} */ (this.stmt.get.get(id)); }
   /** @param {string} id @returns {Buffer|null} */
   pdf(id) { const r = /** @type {{ pdf: Uint8Array|null }|undefined} */ (this.stmt.pdf.get(id)); return r?.pdf ? Buffer.from(r.pdf) : null; }
+  /** Only a queued job can be cancelled; a running one finishes. @param {string} id @param {number} now @returns {boolean} */
+  cancel(id, now) { return Number(this.stmt.cancel.run(now, id).changes) === 1; }
+
   /** Newest first; ids sort by creation time, so `before` (an id) is the keyset cursor. @param {string} owner @param {{ status?: string, before?: string, limit: number }} q @returns {JobRow[]} */
   list(owner, q) { return /** @type {any} */ (this.stmt.list.all(owner, q.status ?? null, q.status ?? null, q.before ?? '~', q.limit)); }
   /** Oldest queued job, claimed as running; undefined when the queue is empty. @param {number} now @returns {JobRow|undefined} */

@@ -18,6 +18,7 @@ One event per completed request (`success`, or `denied` on 403). Validation fail
 | `atc-render.document.render` | `POST /v1/render` | template | `version` (or `latest`), `store` |
 | `atc-render.document.preview` | `POST /v1/render/preview` | `{ type: "layout", id: "preview" }` | |
 | `atc-render.job.create` | `POST /v1/renders` | `{ type: "job", id }` | `template`, `version`, `store` |
+| `atc-render.job.cancel` | `POST /v1/renders/:id/cancel` | `{ type: "job", id }` | – |
 
 
 ## Who is the actor

@@ -68,5 +68,35 @@ export class Database extends CoreDatabase {
     CREATE INDEX jobs_status ON jobs (status, created_at);
     CREATE INDEX jobs_owner ON jobs (owner, created_at);
     `,
+    `
+    -- A queued job can be cancelled; SQLite cannot widen a CHECK, so the table is rebuilt.
+    CREATE TABLE jobs_v2 (
+      id            TEXT PRIMARY KEY,
+      owner         TEXT NOT NULL,
+      actor         TEXT NOT NULL,
+      template      TEXT NOT NULL,
+      version       INTEGER NOT NULL,
+      data          TEXT NOT NULL,
+      filename      TEXT NOT NULL,
+      store         INTEGER NOT NULL DEFAULT 0,
+      status        TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
+      error_code    TEXT,
+      error_message TEXT,
+      pages         INTEGER,
+      bytes         INTEGER,
+      pdf           BLOB,
+      file_id       TEXT,
+      url           TEXT,
+      url_expires_at INTEGER,
+      created_at    INTEGER NOT NULL,
+      started_at    INTEGER,
+      finished_at   INTEGER
+    );
+    INSERT INTO jobs_v2 SELECT id, owner, actor, template, version, data, filename, store, status, error_code, error_message, pages, bytes, pdf, file_id, url, url_expires_at, created_at, started_at, finished_at FROM jobs;
+    DROP TABLE jobs;
+    ALTER TABLE jobs_v2 RENAME TO jobs;
+    CREATE INDEX jobs_status ON jobs (status, created_at);
+    CREATE INDEX jobs_owner ON jobs (owner, created_at);
+    `,
   ];
 }

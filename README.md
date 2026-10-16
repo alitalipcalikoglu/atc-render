@@ -66,6 +66,7 @@ All `/v1/*` routes and `/metrics` need `Authorization: Bearer <secret>`.
 | POST | `/v1/renders` | read | Same body as `/v1/render` → `202 { job }`: queued, drawn in the background, kept `RENDER_JOB_HOURS` |
 | GET | `/v1/renders?status=&limit=&cursor=` | read | The calling key's jobs, newest first |
 | GET | `/v1/renders/:id` | read | Job status, `error`, `result` (`{ download }` or, with `store`, `{ fileId, url, expiresAt }`) |
+| POST | `/v1/renders/:id/cancel` | read | Cancel a queued job (`409 INVALID_STATE` once it runs) |
 | GET | `/v1/renders/:id/pdf` | read | The finished PDF; `409 JOB_NOT_READY` until then |
 | GET | `/v1/fonts` | read | `{ default: "dejavu", items }`: families a layout can name in `page.font` |
 | GET | `/v1/stats` | read | Templates; last 24 h renders, failures by code, average ms, pages, bytes, stored, per template |
@@ -75,7 +76,7 @@ PDF responses carry `content-disposition: attachment`, `content-security-policy:
 ## Conventions
 
 - Lists answer `{ items, nextCursor }`; pass `nextCursor` back as `cursor`. Templates and fonts are complete lists (`nextCursor: null`); render jobs page newest first. Jobs have `rnd_<time><random>` ids (the platform's one id format); template names are natural keys.
-- Template creation, version publishing and async render submission honour `Idempotency-Key`: a repeat with the same key (per API key and caller — the console's `X-Actor` counts — for 24 h) replays the first 2xx answer with `Idempotent-Replayed: true`; another body is `409 IDEMPOTENCY_MISMATCH`.
+- Template creation, version publishing, async render submission and cancel honour `Idempotency-Key`: a repeat with the same key (per API key and caller — the console's `X-Actor` counts — for 24 h) replays the first 2xx answer with `Idempotent-Replayed: true`; another body is `409 IDEMPOTENCY_MISMATCH`.
 
 ## Examples
 
@@ -144,7 +145,7 @@ test/                         node:test suites, with a PDF text extractor for co
 
 ## Audit events
 
-With `AUDIT_URL` and `AUDIT_API_KEY` set, every completed write and render is forwarded as one event (`success`, or `denied` on 403) with the calling key as actor (or, for an `ACTOR_KEYS` key sending `X-Actor`, that admin as actor and the key in `meta.via`): `atc-render.template.create|update|delete`, `atc-render.version.create` (meta: version), `atc-render.document.render` (target: template; meta: version, store), `atc-render.document.preview`, `atc-render.job.create` (target: job; meta: template, version, store). Render data never appears in events. Details: [examples/audit-events.md](examples/audit-events.md).
+With `AUDIT_URL` and `AUDIT_API_KEY` set, every completed write and render is forwarded as one event (`success`, or `denied` on 403) with the calling key as actor (or, for an `ACTOR_KEYS` key sending `X-Actor`, that admin as actor and the key in `meta.via`): `atc-render.template.create|update|delete`, `atc-render.version.create` (meta: version), `atc-render.document.render` (target: template; meta: version, store), `atc-render.document.preview`, `atc-render.job.create` (target: job; meta: template, version, store), `atc-render.job.cancel` (target: job). Render data never appears in events. Details: [examples/audit-events.md](examples/audit-events.md).
 
 ## Scaling model
 

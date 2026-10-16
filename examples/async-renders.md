@@ -68,6 +68,14 @@ The answer is `{ items, nextCursor }`; pass `nextCursor` back as `&cursor=` for 
 
 Only the submitting key sees its jobs; another key gets `404 JOB_NOT_FOUND`.
 
+## Cancel
+
+```bash
+curl -X POST "$RENDER/v1/renders/rnd_mv7q2b1k9c4e7a0d3f6b2e81/cancel" -H "Authorization: Bearer $KEY"
+```
+
+Only a `queued` job is cancelled (`{ job }` with `status: "cancelled"`); a job already running finishes, and the call answers `409 INVALID_STATE`. Cancelled jobs stay in the list until retention removes them.
+
 ## Limits and retention
 
 - `RENDER_JOB_CONCURRENCY` (default 1) jobs are drawn at once; each takes one of the `RENDER_CONCURRENCY` slots, so synchronous renders always keep the rest. When synchronous renders hold every slot, a job waits and retries; it does not fail.

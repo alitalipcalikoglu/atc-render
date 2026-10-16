@@ -21,6 +21,7 @@ export class RenderError extends Error {
     QUEUE_FULL: 429,
     JOB_NOT_FOUND: 404,
     JOB_NOT_READY: 409,
+    INVALID_STATE: 409,
     UNKNOWN_FONT: 400,
     FORBIDDEN: 403,
   };

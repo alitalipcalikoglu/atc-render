@@ -416,7 +416,7 @@ paths:
       summary: The calling key's render jobs, newest first
       tags: [jobs]
       parameters:
-        - { name: status, in: query, required: false, schema: { type: string, enum: [queued, running, succeeded, failed] } }
+        - { name: status, in: query, required: false, schema: { type: string, enum: [queued, running, succeeded, failed, cancelled] } }
         - { name: limit, in: query, required: false, description: "1-200, default 50.", schema: { type: string, pattern: "^([1-9]|[1-9][0-9]|1[0-9][0-9]|200)$" } }
         - { name: cursor, in: query, required: false, description: "Opaque `nextCursor` from the previous page.", schema: { $ref: "#/components/schemas/JobId" } }
       responses:
@@ -455,6 +455,30 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { description: "`JOB_NOT_FOUND` (unknown, purged, or another key's job).", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+
+  /v1/renders/{id}/cancel:
+    post:
+      operationId: atc-render.jobs.cancel
+      summary: Cancel a queued render job
+      description: Only a `queued` job can be cancelled; a running one finishes (`409 INVALID_STATE`). The job stays listed as `cancelled` until retention removes it.
+      tags: [jobs]
+      parameters:
+        - { name: id, in: path, required: true, schema: { $ref: "#/components/schemas/JobId" } }
+        - $ref: "#/components/parameters/IdempotencyKeyHeader"
+      responses:
+        "200":
+          description: The cancelled job.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job]
+                properties:
+                  job: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { description: "`JOB_NOT_FOUND` (unknown, purged, or another key's job).", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
+        "409": { description: "`INVALID_STATE`: the job is not queued.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } } }
 
   /v1/renders/{id}/pdf:
     get:
@@ -574,7 +598,7 @@ components:
       required: [id, status, template, version, filename, store, createdBy, createdAt, startedAt, finishedAt, pages, bytes, error, result]
       properties:
         id: { $ref: "#/components/schemas/JobId" }
-        status: { type: string, enum: [queued, running, succeeded, failed] }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled] }
         template: { type: string }
         version: { type: integer }
         filename: { type: string }
