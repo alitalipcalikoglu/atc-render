@@ -179,7 +179,7 @@ export class RenderApi {
       api.get('/renders/:id', { ...read, schema: { params: Schemas.jobParams } }, async (request) => ({ job: Views.job(jobs.get(jobId(request), owner(request))) }));
       api.post('/renders/:id/cancel', {
         config: { idempotent: true, audit: AuditClient.route('atc-render.job.cancel', (r) => ({ type: 'job', id: /** @type {any} */ (r.params).id })) },
-        ...read, schema: { params: Schemas.jobParams },
+        ...write, schema: { params: Schemas.jobParams },
       }, async (request) => ({ job: Views.job(jobs.cancel(jobId(request), owner(request))) }));
       api.get('/renders/:id/pdf', { ...read, schema: { params: Schemas.jobParams } }, async (request, reply) => {
         const r = jobs.pdf(jobId(request), owner(request));

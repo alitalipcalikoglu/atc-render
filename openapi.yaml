@@ -460,6 +460,7 @@ paths:
     post:
       operationId: atc-render.jobs.cancel
       summary: Cancel a queued render job
+      x-required-role: write
       description: Only a `queued` job can be cancelled; a running one finishes (`409 INVALID_STATE`). The job stays listed as `cancelled` until retention removes it.
       tags: [jobs]
       parameters:

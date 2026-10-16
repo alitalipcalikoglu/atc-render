@@ -66,7 +66,7 @@ All `/v1/*` routes and `/metrics` need `Authorization: Bearer <secret>`.
 | POST | `/v1/renders` | read | Same body as `/v1/render` → `202 { job }`: queued, drawn in the background, kept `RENDER_JOB_HOURS` |
 | GET | `/v1/renders?status=&limit=&cursor=` | read | The calling key's jobs, newest first |
 | GET | `/v1/renders/:id` | read | Job status, `error`, `result` (`{ download }` or, with `store`, `{ fileId, url, expiresAt }`) |
-| POST | `/v1/renders/:id/cancel` | read | Cancel a queued job (`409 INVALID_STATE` once it runs) |
+| POST | `/v1/renders/:id/cancel` | write | Cancel a queued job (`409 INVALID_STATE` once it runs) |
 | GET | `/v1/renders/:id/pdf` | read | The finished PDF; `409 JOB_NOT_READY` until then |
 | GET | `/v1/fonts` | read | `{ default: "dejavu", items }`: families a layout can name in `page.font` |
 | GET | `/v1/stats` | read | Templates; last 24 h renders, failures by code, average ms, pages, bytes, stored, per template |
